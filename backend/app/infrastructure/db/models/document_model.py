@@ -1,0 +1,39 @@
+from __future__ import annotations
+
+from sqlalchemy import ForeignKey, Index, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.infrastructure.db.base import Base, TimestampMixin, UuidPrimaryKeyMixin
+
+
+class DocumentModel(UuidPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "documents"
+    __table_args__ = (
+        Index("ix_documents_application_id", "application_id"),
+        Index("ix_documents_knowledge_base_id", "knowledge_base_id"),
+        Index("ix_documents_status", "status"),
+        Index("ix_documents_source_type", "source_type"),
+    )
+
+    application_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("applications.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    knowledge_base_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("knowledge_bases.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    storage_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mime_type: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    file_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    checksum_sha256: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", server_default="pending")
+    ingestion_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    application = relationship("ApplicationModel", back_populates="documents")
+    knowledge_base = relationship("KnowledgeBaseModel", back_populates="documents")
