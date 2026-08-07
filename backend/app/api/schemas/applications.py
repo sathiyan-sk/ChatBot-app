@@ -6,17 +6,17 @@ from pydantic import BaseModel, Field
 
 
 class CreateApplicationRequest(BaseModel):
-    name: str = Field(min_length=2, max_length=150)
+    name: str = Field(..., min_length=1, max_length=150)
     description: str | None = Field(default=None, max_length=2000)
-    client_type: str = Field(min_length=2, max_length=50)
-    allowed_origins: list[str] | None = None
+    client_type: str = Field(..., min_length=1, max_length=50)
+    allowed_origins: list[str] = Field(default_factory=list)
 
 
 class UpdateApplicationRequest(BaseModel):
-    name: str = Field(min_length=2, max_length=150)
+    name: str = Field(..., min_length=1, max_length=150)
     description: str | None = Field(default=None, max_length=2000)
-    client_type: str = Field(min_length=2, max_length=50)
-    allowed_origins: list[str] | None = None
+    client_type: str = Field(..., min_length=1, max_length=50)
+    allowed_origins: list[str] = Field(default_factory=list)
     is_active: bool = True
 
 

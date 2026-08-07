@@ -4,11 +4,11 @@ from dataclasses import dataclass
 
 from app.core.exceptions import ApplicationError
 from app.knowledge_engine.ingestion.chunker import IntelligentChunkGenerator
+from app.knowledge_engine.ingestion.document_parser import DocumentParser
 from app.knowledge_engine.ingestion.embedding_generator import EmbeddingGenerator
 from app.knowledge_engine.ingestion.metadata_enricher import MetadataEnricher
 from app.knowledge_engine.ingestion.normalizer import DocumentNormalizer
-from app.knowledge_engine.ingestion.parsers.base import DocumentParser
-from app.knowledge_engine.ingestion.source_loaders.base import SourceLoader
+from app.knowledge_engine.ingestion.source_loader import SourceLoader
 from app.knowledge_engine.ingestion.vector_indexer import VectorIndexer
 from app.knowledge_engine.shared.models import (
     KnowledgeIngestionPipelineRequest,
@@ -52,7 +52,6 @@ class KnowledgeIngestionPipeline:
             document_title=normalized_document.title,
             document_metadata=normalized_document.metadata,
         )
-
         embedded_chunks = self.embedding_generator.generate(enriched_chunks)
         indexed_chunk_ids = self.vector_indexer.index(embedded_chunks)
 

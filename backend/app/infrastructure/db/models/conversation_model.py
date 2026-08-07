@@ -29,5 +29,5 @@ class ConversationModel(UuidPrimaryKeyMixin, TimestampMixin, Base):
         "MessageModel",
         back_populates="conversation",
         cascade="all, delete-orphan",
-        order_by="MessageModel.created_at",
+        order_by="MessageModel.sequence_number",
     )

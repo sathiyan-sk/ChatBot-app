@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.modules.chat.contracts.response_models import CitationItem
+from app.modules.question_answering.contracts.response_models import CitationItem
 
 
 @dataclass(slots=True, frozen=True)

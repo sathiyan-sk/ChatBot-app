@@ -7,8 +7,8 @@ from dataclasses import dataclass
 class CreateKnowledgeBaseCommand:
     application_id: str
     name: str
-    description: str | None = None
-    status: str = "active"
+    description: str | None
+    status: str = "ready"
 
 
 @dataclass(slots=True, frozen=True)

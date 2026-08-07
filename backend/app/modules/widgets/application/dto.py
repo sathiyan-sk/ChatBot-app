@@ -8,13 +8,11 @@ from datetime import datetime
 class WidgetDto:
     id: str
     application_id: str
-    display_name: str
-    welcome_message: str
-    placeholder_text: str
-    theme_mode: str
-    primary_color: str
-    position: str
+    name: str
+    theme: str
+    launcher_label: str | None
+    welcome_message: str | None
+    placeholder_text: str | None
     is_enabled: bool
-    allowed_origins: list[str]
     created_at: datetime
     updated_at: datetime

@@ -5,12 +5,9 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from app.api.dependencies import get_chat_application_service
-from app.api.schemas.chat import (
-    ChatMessageRequest,
-    ChatMessageResponse,
-    CitationResponse,
-)
-from app.modules.chat.application.services import ChatApplicationService
+from app.api.schemas.chat import ChatMessageRequest, ChatMessageResponse, CitationResponse
+from app.modules.question_answering.application.commands import AskChatQuestionCommand
+from app.modules.question_answering.application.services import ChatApplicationService
 
 router = APIRouter(prefix="/client/chat", tags=["Client Chat"])
 
@@ -27,25 +24,28 @@ def create_chat_message(
             detail="Application API key is required.",
         )
 
-    result = service.answer_question(
-        api_key=x_application_api_key,
-        conversation_id=request.conversation_id,
-        conversation_identity=request.conversation_identity,
-        message=request.message,
+    result = service.ask(
+        AskChatQuestionCommand(
+            application_id=request.application_id,
+            conversation_identity=request.conversation_identity,
+            message_text=request.message,
+            conversation_title=request.conversation_title,
+        )
     )
 
     citations = [
         CitationResponse(
-            source_id=item.source_id,
-            title=getattr(item, "title", None),
-            snippet=getattr(item, "snippet", None),
+            document_id=item.document_id,
+            title=item.document_title,
+            chunk_id=item.chunk_id,
+            source_uri=item.source_uri,
         )
         for item in result.citations
     ]
 
     return ChatMessageResponse(
         conversation_id=result.conversation_id,
-        answer=result.answer,
+        answer=result.answer_text,
         citations=citations,
-        created_at=getattr(result, "created_at", datetime.now(timezone.utc)),
+        created_at=datetime.now(timezone.utc),
     )

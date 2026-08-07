@@ -52,25 +52,24 @@ class ApplicationServices:
             slug=slug,
             description=description,
             client_type=command.client_type.strip(),
-            allowed_origins=self._serialize_allowed_origins(allowed_origins),
+            allowed_origins=allowed_origins,
         )
 
         key_material = self._generate_api_key_material(slug=slug)
 
         self.provisioning_repository.create_default_knowledge_base(
-            application_id=application.id,
+            application_id=str(application.id),
             application_name=application.name,
         )
-        self.provisioning_repository.create_default_settings(application_id=application.id)
+        self.provisioning_repository.create_default_settings(application_id=str(application.id))
         self.provisioning_repository.create_api_key(
-            application_id=application.id,
+            application_id=str(application.id),
             key_name="Default API Key",
             key_prefix=key_material["key_prefix"],
             key_hash=key_material["key_hash"],
         )
 
         self.session.commit()
-        self.session.refresh(self._get_application_model_reference(application.id))
 
         logger.info(
             "Application created and provisioned | application_id=%s slug=%s client_type=%s",
@@ -80,9 +79,7 @@ class ApplicationServices:
         )
 
         return CreatedApplicationDto(
-            application=self._to_dto(
-                self._require_application(application.id),
-            ),
+            application=self._to_dto(self._require_application(application.id)),
             api_key=key_material["raw_key"],
             api_key_prefix=key_material["key_prefix"],
         )
@@ -98,6 +95,7 @@ class ApplicationServices:
         current = self._require_application(command.application_id)
         normalized_name = normalize_application_name(command.name)
         next_slug = build_application_slug(normalized_name)
+        allowed_origins = self._normalize_allowed_origins(command.allowed_origins)
 
         if next_slug != current.slug:
             existing_by_slug = self.application_repository.get_by_slug(next_slug)
@@ -114,9 +112,7 @@ class ApplicationServices:
             slug=next_slug,
             description=normalize_optional_text(command.description),
             client_type=command.client_type.strip(),
-            allowed_origins=self._serialize_allowed_origins(
-                self._normalize_allowed_origins(command.allowed_origins)
-            ),
+            allowed_origins=allowed_origins,
             is_active=command.is_active,
         )
 
@@ -172,14 +168,18 @@ class ApplicationServices:
             return None
         return ",".join(allowed_origins)
 
-    def _deserialize_allowed_origins(self, raw_value: str | None) -> list[str]:
-        if not raw_value:
+    def _deserialize_allowed_origins(self, raw_value: list[str] | str | None) -> list[str]:
+        if raw_value is None:
             return []
+        if isinstance(raw_value, list):
+            # Already a list from PostgreSQL text[]
+            return [item.strip() for item in raw_value if item and item.strip()]
+        # Fallback for legacy string storage
         return [item.strip() for item in raw_value.split(",") if item.strip()]
 
     def _to_dto(self, application: Application) -> ApplicationDto:
         return ApplicationDto(
-            id=application.id,
+            id=str(application.id),
             name=application.name,
             slug=application.slug,
             description=application.description,
@@ -200,14 +200,3 @@ class ApplicationServices:
             "key_prefix": key_prefix,
             "key_hash": key_hash,
         }
-
-    def _get_application_model_reference(self, application_id: str):
-        from app.modules.applications.infrastructure.repositories import ApplicationSqlAlchemyRepository
-
-        if not isinstance(self.application_repository, ApplicationSqlAlchemyRepository):
-            raise ApplicationError(
-                message="Application repository does not support refresh operations.",
-                code="repository_refresh_not_supported",
-                status_code=500,
-            )
-        return self.application_repository.get_model_by_id(application_id)

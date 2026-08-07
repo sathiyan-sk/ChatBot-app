@@ -68,7 +68,7 @@ class KnowledgeIngestionPipelineRequest:
     knowledge_base_id: str
     source_type: str
     source_path: str
-    source_url: str | None = None
+    source_identifier: str
     metadata: dict[str, str] = field(default_factory=dict)
 
 

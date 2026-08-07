@@ -1,24 +1,26 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
-class AskChatRequestSchema(BaseModel):
-    conversation_identity: str = Field(min_length=1, max_length=255)
-    message_text: str = Field(min_length=1)
+class ChatMessageRequest(BaseModel):
+    application_id: str = Field(..., min_length=1)
+    conversation_identity: str = Field(..., min_length=1, max_length=255)
+    message: str = Field(..., min_length=1, max_length=8000)
     conversation_title: str | None = Field(default=None, max_length=255)
 
 
-class CitationSchema(BaseModel):
+class CitationResponse(BaseModel):
     document_id: str
-    document_title: str
+    title: str
     chunk_id: str
-    source_uri: str | None = None
+    source_uri: str | None
 
 
-class AskChatResponseSchema(BaseModel):
+class ChatMessageResponse(BaseModel):
     conversation_id: str
-    user_message_id: str
-    assistant_message_id: str
-    answer_text: str
-    citations: list[CitationSchema]
+    answer: str
+    citations: list[CitationResponse] = Field(default_factory=list)
+    created_at: datetime

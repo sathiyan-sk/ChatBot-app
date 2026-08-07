@@ -7,11 +7,6 @@ from app.modules.settings.application.commands import CreateSettingsCommand, Upd
 from app.modules.settings.application.dto import SettingsDto
 from app.modules.settings.application.queries import GetSettingsByApplicationQuery
 from app.modules.settings.domain.entities import PlatformSettings
-from app.modules.settings.domain.policies import (
-    validate_conversation_inactivity_minutes,
-    validate_conversation_retention_days,
-    validate_retrieval_top_k,
-)
 from app.modules.settings.domain.repository_interfaces import SettingsRepositoryInterface
 
 
@@ -23,22 +18,18 @@ class SettingsApplicationService:
         existing = self.settings_repository.get_by_application_id(command.application_id)
         if existing is not None:
             raise ApplicationError(
-                message="Settings already exist for application.",
+                message="Settings already exist for this application.",
                 code="settings_already_exist",
                 status_code=409,
             )
 
         created = self.settings_repository.create(
             application_id=command.application_id,
-            conversation_inactivity_minutes=validate_conversation_inactivity_minutes(
-                command.conversation_inactivity_minutes
-            ),
-            conversation_retention_days=validate_conversation_retention_days(
-                command.conversation_retention_days
-            ),
-            retrieval_top_k=validate_retrieval_top_k(command.retrieval_top_k),
-            reranker_enabled=command.reranker_enabled,
-            citations_enabled=command.citations_enabled,
+            llm_temperature=command.llm_temperature,
+            max_context_messages=command.max_context_messages,
+            inactivity_timeout_minutes=command.inactivity_timeout_minutes,
+            retention_days=command.retention_days,
+            prompt_system_template=command.prompt_system_template,
         )
         return self._to_dto(created)
 
@@ -62,16 +53,12 @@ class SettingsApplicationService:
             )
 
         updated = self.settings_repository.update(
-            settings_id=existing.id,
-            conversation_inactivity_minutes=validate_conversation_inactivity_minutes(
-                command.conversation_inactivity_minutes
-            ),
-            conversation_retention_days=validate_conversation_retention_days(
-                command.conversation_retention_days
-            ),
-            retrieval_top_k=validate_retrieval_top_k(command.retrieval_top_k),
-            reranker_enabled=command.reranker_enabled,
-            citations_enabled=command.citations_enabled,
+            application_id=command.application_id,
+            llm_temperature=command.llm_temperature,
+            max_context_messages=command.max_context_messages,
+            inactivity_timeout_minutes=command.inactivity_timeout_minutes,
+            retention_days=command.retention_days,
+            prompt_system_template=command.prompt_system_template,
         )
         return self._to_dto(updated)
 
@@ -79,11 +66,11 @@ class SettingsApplicationService:
         return SettingsDto(
             id=settings.id,
             application_id=settings.application_id,
-            conversation_inactivity_minutes=settings.conversation_inactivity_minutes,
-            conversation_retention_days=settings.conversation_retention_days,
-            retrieval_top_k=settings.retrieval_top_k,
-            reranker_enabled=settings.reranker_enabled,
-            citations_enabled=settings.citations_enabled,
+            llm_temperature=settings.llm_temperature,
+            max_context_messages=settings.max_context_messages,
+            inactivity_timeout_minutes=settings.inactivity_timeout_minutes,
+            retention_days=settings.retention_days,
+            prompt_system_template=settings.prompt_system_template,
             created_at=settings.created_at,
             updated_at=settings.updated_at,
         )

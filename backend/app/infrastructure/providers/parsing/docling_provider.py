@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from io import BytesIO
 
 from app.core.exceptions import ApplicationError
 from app.knowledge_engine.contracts.parsing import ParsingContract
-from app.knowledge_engine.shared.helpers import normalize_whitespace, split_text_into_paragraphs
+from app.knowledge_engine.shared.helpers import split_text_into_paragraphs, normalize_whitespace
 from app.knowledge_engine.shared.models import ParsedDocument, RawSource
 
 
 @dataclass(slots=True)
 class DoclingParsingProvider(ParsingContract):
-    def parse(self, source: RawSource) -> ParsedDocument:
-        if source.content_bytes is None and source.content_text is None:
+    def parse(
+        self,
+        source: RawSource,
+    ) -> ParsedDocument:
+        if (
+            source.content_bytes is None
+            and source.content_text is None
+        ):
             raise ApplicationError(
                 message="Parsing source content is missing.",
                 code="parsing_source_missing_content",
@@ -20,17 +27,16 @@ class DoclingParsingProvider(ParsingContract):
 
         if source.content_text is not None:
             extracted_text = source.content_text
-        else:
-            try:
-                extracted_text = source.content_bytes.decode("utf-8")
-            except UnicodeDecodeError as exc:
-                raise ApplicationError(
-                    message="Binary document parsing requires a real Docling integration.",
-                    code="docling_binary_parsing_not_available",
-                    status_code=501,
-                ) from exc
 
-        normalized_text = normalize_whitespace(extracted_text)
+        else:
+            extracted_text = self._parse_binary_document(
+                source,
+            )
+
+        normalized_text = normalize_whitespace(
+            extracted_text,
+        )
+
         if not normalized_text:
             raise ApplicationError(
                 message="Parsed document content is empty.",
@@ -38,12 +44,98 @@ class DoclingParsingProvider(ParsingContract):
                 status_code=422,
             )
 
-        paragraphs = split_text_into_paragraphs(extracted_text)
-        title = source.metadata.get("document_title") or source.source_identifier.split("/")[-1] or "Untitled Document"
+        paragraphs = split_text_into_paragraphs(
+            normalized_text,
+        )
+
+        source_name = (
+            source.source_identifier.rsplit(
+                "/",
+                1,
+            )[-1]
+            or "document"
+        )
+
+        title = (
+            source.metadata.get("document_title")
+            or source_name
+            or "Untitled Document"
+        )
 
         return ParsedDocument(
             title=title,
             content=normalized_text,
             sections=paragraphs or [normalized_text],
-            metadata=source.metadata,
+            metadata=dict(source.metadata),
         )
+
+    def _parse_binary_document(
+        self,
+        source: RawSource,
+    ) -> str:
+        if source.content_bytes is None:
+            raise ApplicationError(
+                message="Binary document content is missing.",
+                code="binary_document_content_missing",
+                status_code=422,
+            )
+
+        try:
+            from docling.datamodel.base_models import (
+                DocumentStream,
+            )
+            from docling.document_converter import (
+                DocumentConverter,
+            )
+        except Exception as exc:
+            raise ApplicationError(
+                message=(
+                    "Docling is not available. "
+                    "Install Docling and its dependencies."
+                ),
+                code="docling_dependency_unavailable",
+                status_code=503,
+            ) from exc
+
+        try:
+            source_name = (
+                source.source_identifier.rsplit(
+                    "/",
+                    1,
+                )[-1]
+                or "document"
+            )
+
+            document_stream = DocumentStream(
+                name=source_name,
+                stream=BytesIO(source.content_bytes),
+            )
+
+            converter = DocumentConverter()
+
+            conversion_result = converter.convert(
+                document_stream,
+            )
+
+            extracted_text = (
+                conversion_result.document.export_to_markdown()
+            )
+
+            if not extracted_text:
+                raise ApplicationError(
+                    message="Docling returned empty document content.",
+                    code="docling_empty_conversion_result",
+                    status_code=422,
+                )
+
+            return extracted_text
+
+        except ApplicationError:
+            raise
+
+        except Exception as exc:
+            raise ApplicationError(
+                message=f"Docling failed to parse the document: {exc}",
+                code="docling_binary_parsing_failed",
+                status_code=422,
+            ) from exc

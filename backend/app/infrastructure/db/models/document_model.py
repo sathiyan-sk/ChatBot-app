@@ -26,6 +26,7 @@ class DocumentModel(UuidPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_type: Mapped[str] = mapped_column(String(50), nullable=False)
     source_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
     storage_path: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -33,7 +34,7 @@ class DocumentModel(UuidPrimaryKeyMixin, TimestampMixin, Base):
     file_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     checksum_sha256: Mapped[str | None] = mapped_column(String(128), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", server_default="pending")
-    ingestion_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     application = relationship("ApplicationModel", back_populates="documents")
     knowledge_base = relationship("KnowledgeBaseModel", back_populates="documents")

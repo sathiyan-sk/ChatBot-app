@@ -25,7 +25,7 @@ def map_message_model_to_entity(model: MessageModel) -> Message:
         role=model.role,
         content=model.content,
         sequence_number=model.sequence_number,
-        citation_payload=model.citation_payload,
+        citation_payload=model.citations_json,
         created_at=model.created_at,
         updated_at=model.updated_at,
     )

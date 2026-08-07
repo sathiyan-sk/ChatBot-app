@@ -29,15 +29,32 @@ from app.modules.documents.domain.value_objects import (
     DocumentTitle,
 )
 from app.modules.knowledge_bases.domain.repository_interfaces import KnowledgeBaseRepositoryInterface
+from app.infrastructure.providers.providers import StorageContract
+from hashlib import sha256
+from pathlib import Path
+from uuid import UUID, uuid4
 
 
 @dataclass(slots=True)
 class DocumentApplicationService:
     document_repository: DocumentRepositoryInterface
     knowledge_base_repository: KnowledgeBaseRepositoryInterface
+    storage_provider: StorageContract
 
-    def create(self, command: CreateDocumentCommand) -> DocumentDto:
-        knowledge_base = self.knowledge_base_repository.get_by_id(command.knowledge_base_id)
+    def upload(
+        self,
+        *,
+        knowledge_base_id: UUID,
+        title: str,
+        description: str | None,
+        filename: str,
+        content_type: str | None,
+        content: bytes,
+    ) -> DocumentDto:
+        knowledge_base = self.knowledge_base_repository.get_by_id(
+            knowledge_base_id
+        )
+
         if knowledge_base is None:
             raise ApplicationError(
                 message="Knowledge base not found.",
@@ -45,8 +62,57 @@ class DocumentApplicationService:
                 status_code=404,
             )
 
+        if not content:
+            raise ApplicationError(
+                message="Uploaded file is empty.",
+                code="uploaded_file_empty",
+                status_code=422,
+            )
+
+        document_id = uuid4()
+        safe_filename = Path(filename).name
+        checksum_sha256 = sha256(content).hexdigest()
+
+        storage_path = (
+            f"applications/{knowledge_base.application_id}/"
+            f"knowledge-bases/{knowledge_base.id}/"
+            f"documents/{document_id}/{safe_filename}"
+        )
+
+        self.storage_provider.upload(
+            path=storage_path,
+            content=content,
+            content_type=content_type,
+        )
+
         created = self.document_repository.create(
-            knowledge_base_id=command.knowledge_base_id,
+            id=document_id,
+            application_id=knowledge_base.application_id,
+            knowledge_base_id=knowledge_base.id,
+            title=DocumentTitle(title).value,
+            description=normalize_document_description(description),
+            source_type=DocumentSourceType("file").value,
+            source_uri=None,
+            storage_path=storage_path,
+            mime_type=content_type,
+            file_size_bytes=len(content),
+            checksum_sha256=checksum_sha256,
+            status=DocumentStatus("pending").value,
+            failure_reason=None,
+        )
+
+        return self._to_dto(created)
+
+    def create(self, command: CreateDocumentCommand) -> DocumentDto:
+        knowledge_base = self.knowledge_base_repository.get_by_id(
+        command.knowledge_base_id
+    )
+        if knowledge_base is None:
+            raise ValueError(f"Knowledge base with ID {command.knowledge_base_id} was not found.")
+
+        created = self.document_repository.create(
+            application_id=knowledge_base.application_id,
+            knowledge_base_id=knowledge_base.id,
             title=DocumentTitle(command.title).value,
             description=normalize_document_description(command.description),
             source_type=DocumentSourceType(command.source_type).value,
@@ -160,14 +226,19 @@ class DocumentApplicationService:
 
     def _to_dto(self, document: Document) -> DocumentDto:
         return DocumentDto(
-            id=document.id,
-            knowledge_base_id=document.knowledge_base_id,
-            title=document.title,
-            description=document.description,
-            source_type=document.source_type,
-            source_uri=document.source_uri,
-            status=document.status,
-            failure_reason=document.failure_reason,
-            created_at=document.created_at,
-            updated_at=document.updated_at,
-        )
+        id=document.id,
+        application_id=document.application_id,
+        knowledge_base_id=document.knowledge_base_id,
+        title=document.title,
+        description=document.description,
+        source_type=document.source_type,
+        source_uri=document.source_uri,
+        storage_path=document.storage_path,
+        mime_type=document.mime_type,
+        file_size_bytes=document.file_size_bytes,
+        checksum_sha256=document.checksum_sha256,
+        status=document.status,
+        failure_reason=document.failure_reason,
+        created_at=document.created_at,
+        updated_at=document.updated_at,
+    )

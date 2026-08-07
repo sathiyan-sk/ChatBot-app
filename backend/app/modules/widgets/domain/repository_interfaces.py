@@ -11,14 +11,12 @@ class WidgetRepositoryInterface(ABC):
         self,
         *,
         application_id: str,
-        display_name: str,
-        welcome_message: str,
-        placeholder_text: str,
-        theme_mode: str,
-        primary_color: str,
-        position: str,
+        name: str,
+        theme: str,
+        launcher_label: str | None,
+        welcome_message: str | None,
+        placeholder_text: str | None,
         is_enabled: bool,
-        allowed_origins: list[str],
     ) -> Widget:
         raise NotImplementedError
 
@@ -30,14 +28,12 @@ class WidgetRepositoryInterface(ABC):
     def update(
         self,
         *,
-        widget_id: str,
-        display_name: str,
-        welcome_message: str,
-        placeholder_text: str,
-        theme_mode: str,
-        primary_color: str,
-        position: str,
+        application_id: str,
+        name: str,
+        theme: str,
+        launcher_label: str | None,
+        welcome_message: str | None,
+        placeholder_text: str | None,
         is_enabled: bool,
-        allowed_origins: list[str],
     ) -> Widget:
         raise NotImplementedError

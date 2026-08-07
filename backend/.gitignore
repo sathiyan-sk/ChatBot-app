@@ -14,3 +14,4 @@ build/
 *.log
 alembic/versions/__pycache__/
 tests/
+alembic/

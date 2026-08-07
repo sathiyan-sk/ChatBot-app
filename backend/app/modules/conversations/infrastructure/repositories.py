@@ -44,7 +44,9 @@ class SqlAlchemyConversationRepository(ConversationRepositoryInterface):
     def get_by_id(self, conversation_id: str) -> Conversation | None:
         statement = select(ConversationModel).where(ConversationModel.id == conversation_id)
         model = self._session.execute(statement).scalar_one_or_none()
-        return None if model is None else map_conversation_model_to_entity(model)
+        if model is None:
+            return None
+        return map_conversation_model_to_entity(model)
 
     def get_active_by_identity(
         self,
@@ -57,16 +59,18 @@ class SqlAlchemyConversationRepository(ConversationRepositoryInterface):
             .where(ConversationModel.application_id == application_id)
             .where(ConversationModel.conversation_identity == conversation_identity)
             .where(ConversationModel.is_active.is_(True))
-            .order_by(ConversationModel.updated_at.desc())
+            .order_by(ConversationModel.created_at.desc())
         )
-        model = self._session.execute(statement).scalars().first()
-        return None if model is None else map_conversation_model_to_entity(model)
+        model = self._session.execute(statement).scalar_one_or_none()
+        if model is None:
+            return None
+        return map_conversation_model_to_entity(model)
 
     def list_by_application_id(self, application_id: str) -> list[Conversation]:
         statement = (
             select(ConversationModel)
             .where(ConversationModel.application_id == application_id)
-            .order_by(ConversationModel.updated_at.desc())
+            .order_by(ConversationModel.created_at.desc())
         )
         models = self._session.execute(statement).scalars().all()
         return [map_conversation_model_to_entity(item) for item in models]
@@ -81,7 +85,7 @@ class SqlAlchemyConversationRepository(ConversationRepositoryInterface):
             select(ConversationModel)
             .where(ConversationModel.application_id == application_id)
             .where(ConversationModel.conversation_identity == conversation_identity)
-            .order_by(ConversationModel.updated_at.desc())
+            .order_by(ConversationModel.created_at.desc())
         )
         models = self._session.execute(statement).scalars().all()
         return [map_conversation_model_to_entity(item) for item in models]
@@ -96,11 +100,9 @@ class SqlAlchemyConversationRepository(ConversationRepositoryInterface):
     ) -> Conversation:
         statement = select(ConversationModel).where(ConversationModel.id == conversation_id)
         model = self._session.execute(statement).scalar_one()
-
         model.title = title
         model.summary = summary
         model.is_active = is_active
-
         self._session.flush()
         self._session.refresh(model)
         return map_conversation_model_to_entity(model)
@@ -124,7 +126,8 @@ class SqlAlchemyMessageRepository(MessageRepositoryInterface):
             role=role,
             content=content,
             sequence_number=sequence_number,
-            citation_payload=citation_payload,
+            citations_json=citation_payload,
+            metadata_json=None,
         )
         self._session.add(model)
         self._session.flush()
@@ -144,5 +147,5 @@ class SqlAlchemyMessageRepository(MessageRepositoryInterface):
         statement = select(func.max(MessageModel.sequence_number)).where(
             MessageModel.conversation_id == conversation_id
         )
-        latest = self._session.execute(statement).scalar_one()
-        return int(latest or 0)
+        value = self._session.execute(statement).scalar_one_or_none()
+        return int(value or 0)

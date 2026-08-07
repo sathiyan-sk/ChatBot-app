@@ -10,6 +10,13 @@ def create_session_factory(database_url: str) -> sessionmaker:
         pool_pre_ping=True,
         future=True,
     )
+    try:
+        with engine.connect() as connection:
+            print("Database connection successful.")
+    except Exception as e:
+        print(f"Database connection failed: {e}")
+        raise e
+        
     return sessionmaker(
         bind=engine,
         autoflush=False,

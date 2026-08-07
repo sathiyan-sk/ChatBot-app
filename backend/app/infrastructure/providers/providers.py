@@ -8,7 +8,7 @@ from app.knowledge_engine.domain.provider_interfaces import (
     RerankingProvider,
     VectorSearchProvider,
 )
-
+from typing import Protocol
 
 class SimpleEmbeddingProvider(EmbeddingProvider):
     def embed_query(self, text: str) -> list[float]:
@@ -74,3 +74,27 @@ class OllamaLlmProvider(LlmProvider):
             "Grounded answer generated from retrieved knowledge. "
             f"Prompt summary: {user_prompt[:240]}"
         )
+
+
+
+class StorageContract(Protocol):
+    def upload(
+        self,
+        *,
+        path: str,
+        content: bytes,
+        content_type: str | None,
+    ) -> None:
+        ...
+
+    def download_bytes(
+        self,
+        storage_path: str,
+    ) -> bytes:
+        ...
+
+    def download_text(
+        self,
+        storage_path: str,
+    ) -> str:
+        ...

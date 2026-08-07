@@ -21,25 +21,56 @@ from app.modules.applications.infrastructure.repositories import (
     ApplicationSqlAlchemyRepository,
 )
 
-router = APIRouter(prefix="/admin/applications", tags=["Admin Applications"])
+
+router = APIRouter(
+    prefix="/admin/applications",
+    tags=["Admin Applications"],
+)
 
 
-def _build_application_services(container: ApplicationContainer) -> tuple[Session, ApplicationServices]:
+def _build_application_services(
+    container: ApplicationContainer,
+) -> tuple[Session, ApplicationServices]:
     session = container.session_factory()
+
     service = ApplicationServices(
         session=session,
         application_repository=ApplicationSqlAlchemyRepository(session),
         provisioning_repository=ApplicationProvisioningSqlAlchemyRepository(session),
     )
+
     return session, service
 
 
-@router.post("", response_model=CreatedApplicationResponse, status_code=201)
+def _application_response(application) -> ApplicationResponse:
+    """
+    Convert the slots-based ApplicationDto into the API response model.
+    """
+
+    return ApplicationResponse(
+        id=str(application.id),
+        name=application.name,
+        slug=application.slug,
+        description=application.description,
+        client_type=application.client_type,
+        allowed_origins=list(application.allowed_origins or []),
+        is_active=application.is_active,
+        created_at=application.created_at,
+        updated_at=application.updated_at,
+    )
+
+
+@router.post(
+    "",
+    response_model=CreatedApplicationResponse,
+    status_code=201,
+)
 def create_application(
     payload: CreateApplicationRequest,
     container: ApplicationContainer = Depends(get_container),
 ) -> CreatedApplicationResponse:
     session, service = _build_application_services(container)
+
     try:
         result = service.create_application(
             CreateApplicationCommand(
@@ -49,47 +80,63 @@ def create_application(
                 allowed_origins=payload.allowed_origins,
             )
         )
+
         return CreatedApplicationResponse(
-            application=ApplicationResponse(**result.application.__dict__),
+            application=_application_response(result.application),
             api_key=result.api_key,
             api_key_prefix=result.api_key_prefix,
         )
+
     finally:
         session.close()
 
 
-@router.get("", response_model=list[ApplicationResponse])
+@router.get(
+    "",
+    response_model=list[ApplicationResponse],
+)
 def list_applications(
     container: ApplicationContainer = Depends(get_container),
 ) -> list[ApplicationResponse]:
     session, service = _build_application_services(container)
+
     try:
-        result = service.list_applications()
-        return [ApplicationResponse(**item.__dict__) for item in result]
+        results = service.list_applications()
+        return [_application_response(item) for item in results]
+
     finally:
         session.close()
 
 
-@router.get("/{application_id}", response_model=ApplicationResponse)
+@router.get(
+    "/{application_id}",
+    response_model=ApplicationResponse,
+)
 def get_application(
     application_id: str,
     container: ApplicationContainer = Depends(get_container),
 ) -> ApplicationResponse:
     session, service = _build_application_services(container)
+
     try:
         result = service.get_application(application_id)
-        return ApplicationResponse(**result.__dict__)
+        return _application_response(result)
+
     finally:
         session.close()
 
 
-@router.put("/{application_id}", response_model=ApplicationResponse)
+@router.put(
+    "/{application_id}",
+    response_model=ApplicationResponse,
+)
 def update_application(
     application_id: str,
     payload: UpdateApplicationRequest,
     container: ApplicationContainer = Depends(get_container),
 ) -> ApplicationResponse:
     session, service = _build_application_services(container)
+
     try:
         result = service.update_application(
             UpdateApplicationCommand(
@@ -101,19 +148,26 @@ def update_application(
                 is_active=payload.is_active,
             )
         )
-        return ApplicationResponse(**result.__dict__)
+
+        return _application_response(result)
+
     finally:
         session.close()
 
 
-@router.delete("/{application_id}", response_model=ApplicationResponse)
+@router.delete(
+    "/{application_id}",
+    response_model=ApplicationResponse,
+)
 def deactivate_application(
     application_id: str,
     container: ApplicationContainer = Depends(get_container),
 ) -> ApplicationResponse:
     session, service = _build_application_services(container)
+
     try:
         result = service.deactivate_application(application_id)
-        return ApplicationResponse(**result.__dict__)
+        return _application_response(result)
+
     finally:
         session.close()

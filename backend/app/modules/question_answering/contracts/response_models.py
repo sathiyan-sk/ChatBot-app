@@ -12,6 +12,14 @@ class CitationItem:
 
 
 @dataclass(slots=True, frozen=True)
+class ChatRequestModel:
+    application_id: str
+    conversation_identity: str
+    message_text: str
+    conversation_title: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class ChatResponseModel:
     conversation_id: str
     user_message_id: str

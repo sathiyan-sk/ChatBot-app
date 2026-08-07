@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from app.core.exceptions import ApplicationError
 from app.knowledge_engine.pipelines.question_answering_pipeline import QuestionAnsweringPipeline
 from app.knowledge_engine.shared.models import QuestionAnsweringPipelineRequest
-from app.modules.chat.application.commands import AskChatQuestionCommand
-from app.modules.chat.application.dto import AskChatQuestionResultDto
-from app.modules.chat.contracts.response_models import CitationItem
+from app.modules.question_answering.application.commands import AskChatQuestionCommand
+from app.modules.question_answering.application.dto import AskChatQuestionResultDto
+from app.modules.question_answering.contracts.response_models import CitationItem
 from app.modules.conversations.application.commands import (
     AppendMessageCommand,
     ResolveConversationCommand,
@@ -44,7 +44,10 @@ class ChatApplicationService:
             )
 
         ready_documents = [
-            item for item in self.document_repository.list_by_knowledge_base_id(knowledge_base.id)
+            item 
+            for item in self.document_repository.list_by_knowledge_base_id(
+            knowledge_base_id=knowledge_base.id
+            )
             if item.status == "ready"
         ]
         if not ready_documents:

@@ -8,7 +8,7 @@ class CreateApplicationCommand:
     name: str
     description: str | None
     client_type: str
-    allowed_origins: list[str] | None
+    allowed_origins: list[str] | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -17,5 +17,5 @@ class UpdateApplicationCommand:
     name: str
     description: str | None
     client_type: str
-    allowed_origins: list[str] | None
-    is_active: bool
+    allowed_origins: list[str] | None = None
+    is_active: bool = True

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.modules.applications.domain.entities import Application
 from app.infrastructure.db.models.application_model import ApplicationModel
+from app.modules.applications.domain.entities import Application
 
 
 def map_application_model_to_entity(model: ApplicationModel) -> Application:

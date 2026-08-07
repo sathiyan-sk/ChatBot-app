@@ -8,9 +8,11 @@ from app.config.settings import Settings
 from app.infrastructure.providers.embeddings.nomic_provider import NomicEmbeddingsProvider
 from app.infrastructure.providers.llm.ollama_provider import OllamaLlmProvider
 from app.infrastructure.providers.vector.pgvector_provider import PgVectorProvider
-from app.infrastructure.security.api_key_validator import SqlAlchemyApiKeyRepository
-from app.modules.applications.infrastructure.repositories import SqlAlchemyApplicationRepository
-from app.modules.chat.application.services import ChatApplicationService
+from app.modules.applications.infrastructure.repositories import (
+    ApplicationProvisioningSqlAlchemyRepository,
+    ApplicationSqlAlchemyRepository,
+)
+from app.modules.question_answering.application.services import ChatApplicationService
 from app.modules.conversations.application.services import ConversationApplicationService
 from app.modules.conversations.infrastructure.repositories import (
     SqlAlchemyConversationRepository,
@@ -34,8 +36,7 @@ from app.knowledge_engine.retrieval.reranker import Reranker
 class ApplicationContainer:
     settings: Settings
     session_factory: sessionmaker
-    api_key_repository: SqlAlchemyApiKeyRepository
-    application_repository: SqlAlchemyApplicationRepository
+    application_repository: ApplicationSqlAlchemyRepository
     knowledge_base_repository: SqlAlchemyKnowledgeBaseRepository
     document_repository: SqlAlchemyDocumentRepository
     conversation_repository: SqlAlchemyConversationRepository
@@ -52,8 +53,7 @@ def build_application_container(
 ) -> ApplicationContainer:
     session: Session = session_factory()
 
-    api_key_repository = SqlAlchemyApiKeyRepository(session=session)
-    application_repository = SqlAlchemyApplicationRepository(session=session)
+    application_repository = ApplicationSqlAlchemyRepository(session=session)
     knowledge_base_repository = SqlAlchemyKnowledgeBaseRepository(session=session)
     document_repository = SqlAlchemyDocumentRepository(session=session)
     conversation_repository = SqlAlchemyConversationRepository(session=session)
@@ -64,16 +64,9 @@ def build_application_container(
         message_repository=message_repository,
     )
 
-    embeddings_contract = NomicEmbeddingsProvider(
-        settings=settings,
-    )
-    vector_store_contract = PgVectorProvider(
-        settings=settings,
-        session=session,
-    )
-    llm_contract = OllamaLlmProvider(
-        settings=settings,
-    )
+    embeddings_contract = NomicEmbeddingsProvider(settings=settings)
+    vector_store_contract = PgVectorProvider(settings=settings, session=session)
+    llm_contract = OllamaLlmProvider(settings=settings)
 
     question_answering_pipeline = QuestionAnsweringPipeline(
         conversation_context_builder=ConversationContextBuilder(),
@@ -97,7 +90,6 @@ def build_application_container(
     return ApplicationContainer(
         settings=settings,
         session_factory=session_factory,
-        api_key_repository=api_key_repository,
         application_repository=application_repository,
         knowledge_base_repository=knowledge_base_repository,
         document_repository=document_repository,
