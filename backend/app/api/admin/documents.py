@@ -43,14 +43,16 @@ from app.modules.documents.application.services import (
 router = APIRouter(
     prefix="/admin/documents",
     tags=["Admin Documents"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[
+        Depends(require_admin),
+    ],
 )
+
 
 @router.post(
     "/upload",
     response_model=DocumentResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin)],
 )
 def upload_document(
     knowledge_base_id: UUID = Form(...),
@@ -58,7 +60,7 @@ def upload_document(
     description: str | None = Form(None),
     file: UploadFile = File(...),
     service: DocumentApplicationService = Depends(
-        get_document_application_service
+        get_document_application_service,
     ),
 ) -> DocumentResponse:
     content = file.file.read()
@@ -75,7 +77,8 @@ def upload_document(
     return DocumentResponse.model_validate(
         result,
         from_attributes=True,
-    ).model_dump(mode="json")
+    )
+
 
 @router.post(
     "",
@@ -85,7 +88,7 @@ def upload_document(
 def create_document(
     request: CreateDocumentRequest,
     service: DocumentApplicationService = Depends(
-        get_document_application_service
+        get_document_application_service,
     ),
 ) -> DocumentResponse:
     result = service.create(
@@ -102,7 +105,7 @@ def create_document(
     return DocumentResponse.model_validate(
         result,
         from_attributes=True,
-    ).model_dump(mode="json")
+    )
 
 
 @router.get(
@@ -112,19 +115,19 @@ def create_document(
 def get_document_by_id(
     document_id: UUID,
     service: DocumentApplicationService = Depends(
-        get_document_application_service
+        get_document_application_service,
     ),
-):
+) -> DocumentResponse:
     result = service.get_by_id(
         GetDocumentByIdQuery(
-            document_id=document_id
+            document_id=document_id,
         )
     )
 
     return DocumentResponse.model_validate(
         result,
         from_attributes=True,
-    ).model_dump(mode="json")
+    )
 
 
 @router.get(
@@ -132,15 +135,17 @@ def get_document_by_id(
     response_model=list[DocumentResponse],
 )
 def list_documents(
-    knowledge_base_id: UUID | None = Query(default=None),
+    knowledge_base_id: UUID | None = Query(
+        default=None,
+    ),
     status_value: str | None = Query(
         default=None,
         alias="status",
     ),
     service: DocumentApplicationService = Depends(
-        get_document_application_service
+        get_document_application_service,
     ),
-):
+) -> list[DocumentResponse]:
     if knowledge_base_id is not None:
         results = service.list_by_knowledge_base(
             ListDocumentsByKnowledgeBaseQuery(
@@ -148,12 +153,14 @@ def list_documents(
                 status=status_value,
             )
         )
+
     elif status_value is not None:
         results = service.list_by_status(
             ListDocumentsByStatusQuery(
                 status=status_value,
             )
         )
+
     else:
         results = service.list_all()
 
@@ -161,16 +168,21 @@ def list_documents(
         DocumentResponse.model_validate(
             item,
             from_attributes=True,
-        ).model_dump(mode="json")
+        )
         for item in results
     ]
 
 
-@router.put("/{document_id}", response_model=DocumentResponse)
+@router.put(
+    "/{document_id}",
+    response_model=DocumentResponse,
+)
 def update_document(
-    document_id: str,
+    document_id: UUID,
     request: UpdateDocumentRequest,
-    service: DocumentApplicationService = Depends(get_document_application_service),
+    service: DocumentApplicationService = Depends(
+        get_document_application_service,
+    ),
 ) -> DocumentResponse:
     result = service.update(
         UpdateDocumentCommand(
@@ -180,32 +192,67 @@ def update_document(
             status=request.status,
         )
     )
-    return DocumentResponse.model_validate(result, from_attributes=True)
+
+    return DocumentResponse.model_validate(
+        result,
+        from_attributes=True,
+    )
 
 
-@router.post("/{document_id}/processing", response_model=DocumentResponse)
+@router.post(
+    "/{document_id}/processing",
+    response_model=DocumentResponse,
+)
 def mark_document_processing(
-    document_id: str,
-    service: DocumentApplicationService = Depends(get_document_application_service),
+    document_id: UUID,
+    service: DocumentApplicationService = Depends(
+        get_document_application_service,
+    ),
 ) -> DocumentResponse:
-    result = service.mark_processing(MarkDocumentProcessingCommand(document_id=document_id))
-    return DocumentResponse.model_validate(result, from_attributes=True)
+    result = service.mark_processing(
+        MarkDocumentProcessingCommand(
+            document_id=document_id,
+        )
+    )
+
+    return DocumentResponse.model_validate(
+        result,
+        from_attributes=True,
+    )
 
 
-@router.post("/{document_id}/ready", response_model=DocumentResponse)
+@router.post(
+    "/{document_id}/ready",
+    response_model=DocumentResponse,
+)
 def mark_document_ready(
-    document_id: str,
-    service: DocumentApplicationService = Depends(get_document_application_service),
+    document_id: UUID,
+    service: DocumentApplicationService = Depends(
+        get_document_application_service,
+    ),
 ) -> DocumentResponse:
-    result = service.mark_ready(MarkDocumentReadyCommand(document_id=document_id))
-    return DocumentResponse.model_validate(result, from_attributes=True)
+    result = service.mark_ready(
+        MarkDocumentReadyCommand(
+            document_id=document_id,
+        )
+    )
+
+    return DocumentResponse.model_validate(
+        result,
+        from_attributes=True,
+    )
 
 
-@router.post("/{document_id}/failed", response_model=DocumentResponse)
+@router.post(
+    "/{document_id}/failed",
+    response_model=DocumentResponse,
+)
 def mark_document_failed(
-    document_id: str,
+    document_id: UUID,
     request: MarkDocumentFailedRequest,
-    service: DocumentApplicationService = Depends(get_document_application_service),
+    service: DocumentApplicationService = Depends(
+        get_document_application_service,
+    ),
 ) -> DocumentResponse:
     result = service.mark_failed(
         MarkDocumentFailedCommand(
@@ -213,13 +260,30 @@ def mark_document_failed(
             failure_reason=request.failure_reason,
         )
     )
-    return DocumentResponse.model_validate(result, from_attributes=True)
+
+    return DocumentResponse.model_validate(
+        result,
+        from_attributes=True,
+    )
 
 
-@router.post("/{document_id}/archive", response_model=DocumentResponse)
+@router.post(
+    "/{document_id}/archive",
+    response_model=DocumentResponse,
+)
 def archive_document(
-    document_id: str,
-    service: DocumentApplicationService = Depends(get_document_application_service),
+    document_id: UUID,
+    service: DocumentApplicationService = Depends(
+        get_document_application_service,
+    ),
 ) -> DocumentResponse:
-    result = service.archive(ArchiveDocumentCommand(document_id=document_id))
-    return DocumentResponse.model_validate(result, from_attributes=True)
+    result = service.archive(
+        ArchiveDocumentCommand(
+            document_id=document_id,
+        )
+    )
+
+    return DocumentResponse.model_validate(
+        result,
+        from_attributes=True,
+    )

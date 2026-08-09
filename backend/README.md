@@ -52,6 +52,8 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
    (or) already have file;
 
 pip install -r requirements.txt
+- and check if unmatched...
+.\.venv\Scripts\python.exe -m pip check
 
 4. Upgrade pip/tooling:
 

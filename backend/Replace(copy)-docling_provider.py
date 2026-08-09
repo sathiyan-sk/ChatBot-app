@@ -4,17 +4,9 @@ from dataclasses import dataclass
 from io import BytesIO
 
 from app.core.exceptions import ApplicationError
-from app.knowledge_engine.contracts.parsing import (
-    ParsingContract,
-)
-from app.knowledge_engine.shared.helpers import (
-    normalize_whitespace,
-    split_text_into_paragraphs,
-)
-from app.knowledge_engine.shared.models import (
-    ParsedDocument,
-    RawSource,
-)
+from app.knowledge_engine.contracts.parsing import ParsingContract
+from app.knowledge_engine.shared.helpers import split_text_into_paragraphs, normalize_whitespace
+from app.knowledge_engine.shared.models import ParsedDocument, RawSource
 
 
 @dataclass(slots=True)
@@ -35,6 +27,7 @@ class DoclingParsingProvider(ParsingContract):
 
         if source.content_text is not None:
             extracted_text = source.content_text
+
         else:
             extracted_text = self._parse_binary_document(
                 source,
@@ -90,16 +83,10 @@ class DoclingParsingProvider(ParsingContract):
         try:
             from docling.datamodel.base_models import (
                 DocumentStream,
-                InputFormat,
-            )
-            from docling.datamodel.pipeline_options import (
-                PdfPipelineOptions,
             )
             from docling.document_converter import (
                 DocumentConverter,
-                PdfFormatOption,
             )
-
         except Exception as exc:
             raise ApplicationError(
                 message=(
@@ -121,23 +108,10 @@ class DoclingParsingProvider(ParsingContract):
 
             document_stream = DocumentStream(
                 name=source_name,
-                stream=BytesIO(
-                    source.content_bytes,
-                ),
+                stream=BytesIO(source.content_bytes),
             )
 
-            pdf_options = PdfPipelineOptions(
-                do_ocr=False,
-                do_table_structure=False,
-            )
-
-            converter = DocumentConverter(
-                format_options={
-                    InputFormat.PDF: PdfFormatOption(
-                        pipeline_options=pdf_options,
-                    ),
-                },
-            )
+            converter = DocumentConverter()
 
             conversion_result = converter.convert(
                 document_stream,
@@ -149,10 +123,7 @@ class DoclingParsingProvider(ParsingContract):
 
             if not extracted_text:
                 raise ApplicationError(
-                    message=(
-                        "Docling returned empty "
-                        "document content."
-                    ),
+                    message="Docling returned empty document content.",
                     code="docling_empty_conversion_result",
                     status_code=422,
                 )
@@ -164,10 +135,7 @@ class DoclingParsingProvider(ParsingContract):
 
         except Exception as exc:
             raise ApplicationError(
-                message=(
-                    "Docling failed to parse the "
-                    f"document: {exc}"
-                ),
+                message=f"Docling failed to parse the document: {exc}",
                 code="docling_binary_parsing_failed",
                 status_code=422,
             ) from exc

@@ -84,7 +84,7 @@ class StorageContract(Protocol):
         path: str,
         content: bytes,
         content_type: str | None,
-    ) -> None:
+    ) -> str:
         ...
 
     def download_bytes(

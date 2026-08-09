@@ -73,9 +73,18 @@ class ChatApplicationService:
             )
         )
 
-        conversation_detail = self.conversation_service.get_conversation_detail(
-            GetConversationDetailQuery(conversation_id=conversation.id)
+        conversation_detail = (
+    self.conversation_service.get_conversation_detail(
+        GetConversationDetailQuery(
+            conversation_id=str(
+                conversation.id,
+            ),
+            application_id=str(
+                command.application_id,
+            ),
         )
+    )
+)
 
         pipeline_result = self.question_answering_pipeline.run(
             QuestionAnsweringPipelineRequest(
@@ -95,22 +104,44 @@ class ChatApplicationService:
                 conversation_id=conversation.id,
                 role="assistant",
                 content=pipeline_result.answer_text,
-                citation_payload=json.dumps([item.__dict__ for item in pipeline_result.citations]),
+                citation_payload=json.dumps(
+    [
+        {
+            "document_id": str(item.document_id),
+            "document_title": str(
+                item.document_title
+            ),
+            "chunk_id": str(item.chunk_id),
+            "source_uri": (
+                str(item.source_uri)
+                if item.source_uri is not None
+                else None
+            ),
+        }
+        for item in pipeline_result.citations
+    ]
+),
             )
         )
 
         return AskChatQuestionResultDto(
-            conversation_id=conversation.id,
-            user_message_id=user_message.id,
-            assistant_message_id=assistant_message.id,
+            conversation_id=str(conversation.id),
+            user_message_id=str(user_message.id),
+            assistant_message_id=str(assistant_message.id),
             answer_text=pipeline_result.answer_text,
             citations=[
-                CitationItem(
-                    document_id=item.document_id,
-                    document_title=item.document_title,
-                    chunk_id=item.chunk_id,
-                    source_uri=item.source_uri,
-                )
-                for item in pipeline_result.citations
-            ],
+    CitationItem(
+        document_id=str(item.document_id),
+        document_title=str(
+            item.document_title
+        ),
+        chunk_id=str(item.chunk_id),
+        source_uri=(
+            str(item.source_uri)
+            if item.source_uri is not None
+            else None
+        ),
+    )
+    for item in pipeline_result.citations
+],
         )

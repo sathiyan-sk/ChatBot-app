@@ -83,20 +83,49 @@ class ConversationApplicationService:
         )
         return self._to_message_dto(created_message)
 
-    def get_conversation_detail(self, query: GetConversationDetailQuery) -> ConversationDetailDto:
-        conversation = self.conversation_repository.get_by_id(query.conversation_id)
+    def get_conversation_detail(
+    self,
+    query: GetConversationDetailQuery,
+    ) -> ConversationDetailDto:
+
+        if query.application_id is None:
+            conversation = (
+                self.conversation_repository.get_by_id(
+                query.conversation_id,
+            )
+        )
+        else:
+            conversation = (
+                self.conversation_repository
+                .get_by_id_and_application_id(
+                conversation_id=query.conversation_id,
+                application_id=query.application_id,
+            )
+        )
+
         if conversation is None:
             raise ApplicationError(
-                message="Conversation not found.",
-                code="conversation_not_found",
-                status_code=404,
-            )
-
-        messages = self.message_repository.list_by_conversation_id(conversation.id)
-        return ConversationDetailDto(
-            conversation=self._to_conversation_dto(conversation),
-            messages=[self._to_message_dto(item) for item in messages],
+            message="Conversation not found.",
+            code="conversation_not_found",
+            status_code=404,
         )
+
+        messages = (
+            self.message_repository
+            .list_by_conversation_id(
+            conversation.id,
+        )
+    )
+
+        return ConversationDetailDto(
+        conversation=self._to_conversation_dto(
+            conversation,
+        ),
+        messages=[
+            self._to_message_dto(item)
+            for item in messages
+        ],
+    )
 
     def list_application_conversations(
         self,

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 @dataclass(slots=True, frozen=True)
 class GetConversationDetailQuery:
     conversation_id: str
+    application_id: str | None = None
 
 
 @dataclass(slots=True, frozen=True)

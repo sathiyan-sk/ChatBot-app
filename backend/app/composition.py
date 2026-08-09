@@ -9,7 +9,6 @@ from app.infrastructure.providers.embeddings.nomic_provider import NomicEmbeddin
 from app.infrastructure.providers.llm.ollama_provider import OllamaLlmProvider
 from app.infrastructure.providers.vector.pgvector_provider import PgVectorProvider
 from app.modules.applications.infrastructure.repositories import (
-    ApplicationProvisioningSqlAlchemyRepository,
     ApplicationSqlAlchemyRepository,
 )
 from app.modules.question_answering.application.services import ChatApplicationService

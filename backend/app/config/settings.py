@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
+
 from dotenv import load_dotenv
 
+
 load_dotenv()
+
+
 @dataclass(slots=True, frozen=True)
 class AppSettings:
     app_name: str
@@ -16,12 +20,22 @@ class AppSettings:
 class DatabaseSettings:
     url: str
 
+
 @dataclass(slots=True, frozen=True)
 class StorageSettings:
     supabase_url: str
     supabase_bucket_name: str
     supabase_service_role_key: str
     provider_timeout_seconds: float
+
+
+@dataclass(slots=True, frozen=True)
+class OllamaSettings:
+    base_url: str
+    embedding_model_name: str
+    llm_model_name: str
+    provider_timeout_seconds: float
+
 
 @dataclass(slots=True, frozen=True)
 class ProviderSettings:
@@ -38,9 +52,31 @@ class Settings:
     database: DatabaseSettings
     providers: ProviderSettings
     storage: StorageSettings
+    ollama: OllamaSettings
+
+    # These fields are intentionally on the root Settings
+    # object because PgVectorProvider expects:
+    # settings.vector_store_table_name
+    # settings.vector_store_dimension
+    vector_store_table_name: str
+    vector_store_dimension: int
 
 
 def load_settings() -> Settings:
+    provider_timeout_seconds = float(
+        os.getenv(
+            "PROVIDER_TIMEOUT_SECONDS",
+            "30",
+        )
+    )
+
+    ollama_timeout_seconds = float(
+        os.getenv(
+            "OLLAMA_TIMEOUT_SECONDS",
+            str(provider_timeout_seconds),
+        )
+    )
+
     return Settings(
         app=AppSettings(
             app_name=os.getenv(
@@ -59,11 +95,19 @@ def load_settings() -> Settings:
         database=DatabaseSettings(
             url=os.getenv(
                 "DATABASE_URL",
-                "postgresql+psycopg2://postgres:pfEuZ2Zz3OII0oiN@db.qrmoeqkwmglnsjzacmox.supabase.co:5432/postgres?sslmode=require",
+                (
+                    "postgresql+psycopg2://"
+                    "postgres:pfEuZ2Zz3OII0oiN@"
+                    "db.qrmoeqkwmglnsjzacmox.supabase.co:"
+                    "5432/postgres?sslmode=require"
+                ),
             ),
         ),
         providers=ProviderSettings(
-            llm=os.getenv("LLM_PROVIDER", "ollama"),
+            llm=os.getenv(
+                "LLM_PROVIDER",
+                "ollama",
+            ),
             embeddings=os.getenv(
                 "EMBEDDING_PROVIDER",
                 "ollama",
@@ -78,23 +122,49 @@ def load_settings() -> Settings:
             ),
             parsing=os.getenv(
                 "PARSING_PROVIDER",
-                "docling",
+                "pymupdf",
             ),
         ),
         storage=StorageSettings(
-            supabase_url=os.environ["SUPABASE_URL"],
+            supabase_url=os.environ[
+                "SUPABASE_URL"
+            ],
             supabase_bucket_name=os.environ[
                 "SUPABASE_BUCKET_NAME"
             ],
             supabase_service_role_key=os.environ[
                 "SUPABASE_SERVICE_ROLE_KEY"
             ],
-            provider_timeout_seconds=float(
-                os.getenv(
-                    "PROVIDER_TIMEOUT_SECONDS",
-                    "30",
-                )
+            provider_timeout_seconds=(
+                provider_timeout_seconds
             ),
+        ),
+        ollama=OllamaSettings(
+            base_url=os.getenv(
+                "OLLAMA_BASE_URL",
+                "http://127.0.0.1:11434",
+            ),
+            embedding_model_name=os.getenv(
+                "EMBEDDING_MODEL_NAME",
+                "nomic-embed-text",
+            ),
+            llm_model_name=os.getenv(
+                "LLM_MODEL_NAME",
+                "qwen2.5:7b",
+            ),
+            provider_timeout_seconds=(
+                ollama_timeout_seconds
+            ),
+        ),
+        vector_store_table_name=os.getenv(
+            "VECTOR_STORE_TABLE_NAME",
+            "document_chunks",
+        ),
+        vector_store_dimension=int(
+            os.getenv(
+                "VECTOR_STORE_DIMENSION",
+                "768",
+            )
         ),
     )
 

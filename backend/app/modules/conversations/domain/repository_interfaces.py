@@ -32,6 +32,15 @@ class ConversationRepositoryInterface(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def get_by_id_and_application_id(
+    self,
+    *,
+    conversation_id: str,
+    application_id: str,
+    ) -> Conversation | None:
+        raise NotImplementedError
+
+    @abstractmethod
     def list_by_application_id(self, application_id: str) -> list[Conversation]:
         raise NotImplementedError
 

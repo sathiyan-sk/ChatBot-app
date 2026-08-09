@@ -123,6 +123,9 @@ from app.modules.widgets.application.services import (
 from app.modules.widgets.infrastructure.repositories import (
     SqlAlchemyWidgetRepository,
 )
+from app.infrastructure.providers.parsing.pymupdf_provider import (
+    PyMuPDFParsingProvider,
+)
 
 
 admin_security = HTTPBasic()
@@ -371,7 +374,13 @@ def get_knowledge_ingestion_pipeline(
         session=session,
     )
 
-    if source_type == "website":
+    if source_type == "pdf":
+        source_loader=FileSourceLoader(
+            storage_contract=storage_provider,
+        )
+        parser=PyMuPDFParsingProvider()
+
+    elif source_type == "website":
         source_loader = WebsiteSourceLoader()
 
         parser = HtmlDocumentParser(

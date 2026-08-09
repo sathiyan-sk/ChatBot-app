@@ -11,6 +11,9 @@ from app.api.admin.widgets import router as admin_widgets_router
 from app.api.client.chat import router as client_chat_router
 from app.api.client.conversations import router as client_conversations_router
 from app.api.admin.ingestion import router as admin_ingestion_router
+from app.api.admin.conversation_debug import (
+    router as admin_conversation_debug_router,
+)
 
 api_router = APIRouter(prefix="/api")
 
@@ -23,3 +26,6 @@ api_router.include_router(admin_widgets_router)
 api_router.include_router(admin_conversations_router)
 api_router.include_router(client_chat_router)
 api_router.include_router(client_conversations_router)
+api_router.include_router(
+    admin_conversation_debug_router,
+)
