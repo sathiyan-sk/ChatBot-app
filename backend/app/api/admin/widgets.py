@@ -27,16 +27,14 @@ def create_widget(
         CreateWidgetCommand(
             application_id=request.application_id,
             display_name=request.display_name,
+            theme=request.theme,
+            launcher_label=request.launcher_label,
             welcome_message=request.welcome_message,
             placeholder_text=request.placeholder_text,
-            theme_mode=request.theme_mode,
-            primary_color=request.primary_color,
-            position=request.position,
             is_enabled=request.is_enabled,
-            allowed_origins=request.allowed_origins,
         )
     )
-    return WidgetResponse.model_validate(result.__dict__)
+    return WidgetResponse.model_validate(result,from_attributes=True,)
 
 
 @router.get("/by-application/{application_id}", response_model=WidgetResponse)
@@ -62,11 +60,9 @@ def update_widget(
             display_name=request.display_name,
             welcome_message=request.welcome_message,
             placeholder_text=request.placeholder_text,
-            theme_mode=request.theme_mode,
+            theme=request.theme,
             primary_color=request.primary_color,
-            position=request.position,
             is_enabled=request.is_enabled,
-            allowed_origins=request.allowed_origins,
         )
     )
     return WidgetResponse.model_validate(result.__dict__)

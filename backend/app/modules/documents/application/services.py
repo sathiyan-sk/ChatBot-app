@@ -1,14 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
-from hashlib import sha256
-from pathlib import Path
 from uuid import UUID, uuid4
 
 from app.core.exceptions import ApplicationError
-from app.infrastructure.providers.providers import (
-    StorageContract,
-)
 from app.modules.documents.application.commands import (
     ArchiveDocumentCommand,
     CreateDocumentCommand,
@@ -24,10 +20,6 @@ from app.modules.documents.application.queries import (
     ListDocumentsByStatusQuery,
 )
 from app.modules.documents.domain.entities import Document
-from app.modules.documents.domain.policies import (
-    normalize_document_description,
-    normalize_source_uri,
-)
 from app.modules.documents.domain.repository_interfaces import (
     DocumentRepositoryInterface,
 )
@@ -44,10 +36,49 @@ from app.modules.knowledge_bases.domain.repository_interfaces import (
 @dataclass(slots=True)
 class DocumentApplicationService:
     document_repository: DocumentRepositoryInterface
-    knowledge_base_repository: (
-        KnowledgeBaseRepositoryInterface
-    )
-    storage_provider: StorageContract
+    knowledge_base_repository: KnowledgeBaseRepositoryInterface
+    storage_provider: object | None = None
+
+    def create(
+        self,
+        command: CreateDocumentCommand,
+    ) -> DocumentDto:
+        knowledge_base = (
+            self.knowledge_base_repository.get_by_id(
+                command.knowledge_base_id,
+            )
+        )
+
+        if knowledge_base is None:
+            raise ApplicationError(
+                message="Knowledge base not found.",
+                code="knowledge_base_not_found",
+                status_code=404,
+            )
+
+        created = self.document_repository.create(
+            id=uuid4(),
+            application_id=knowledge_base.application_id,
+            knowledge_base_id=knowledge_base.id,
+            title=DocumentTitle(
+                command.title,
+            ).value,
+            description=command.description,
+            source_type=DocumentSourceType(
+                command.source_type,
+            ).value,
+            source_uri=command.source_uri,
+            storage_path=None,
+            mime_type=None,
+            file_size_bytes=None,
+            checksum_sha256=None,
+            status=DocumentStatus(
+                "pending",
+            ).value,
+            failure_reason=None,
+        )
+
+        return self._to_dto(created)
 
     def upload(
         self,
@@ -72,114 +103,41 @@ class DocumentApplicationService:
                 status_code=404,
             )
 
-        if not content:
+        if self.storage_provider is None:
             raise ApplicationError(
-                message="Uploaded file is empty.",
-                code="uploaded_file_empty",
-                status_code=422,
+                message="Storage provider is not configured.",
+                code="storage_provider_not_configured",
+                status_code=500,
             )
 
         document_id = uuid4()
-
-        safe_filename = Path(filename).name.strip()
-
-        if not safe_filename:
-            safe_filename = "uploaded-file"
-
-        checksum_sha256 = sha256(content).hexdigest()
-
         storage_path = (
-            f"applications/"
-            f"{knowledge_base.application_id}/"
-            f"knowledge-bases/"
-            f"{knowledge_base.id}/"
-            f"documents/"
-            f"{document_id}/"
-            f"{safe_filename}"
+            f"{knowledge_base_id}/{document_id}/{filename}"
         )
+        checksum_sha256 = hashlib.sha256(
+            content,
+        ).hexdigest()
 
-        # Important:
-        # upload() must return the normalized path that was
-        # actually used in Supabase Storage.
-        stored_path = self.storage_provider.upload(
+        uploaded_path = self._upload_to_storage(
             path=storage_path,
             content=content,
             content_type=content_type,
         )
-
-        if not stored_path:
-            raise ApplicationError(
-                message=(
-                    "Storage provider did not return "
-                    "the uploaded file path."
-                ),
-                code="storage_path_not_returned",
-                status_code=502,
-            )
 
         created = self.document_repository.create(
             id=document_id,
             application_id=knowledge_base.application_id,
             knowledge_base_id=knowledge_base.id,
             title=DocumentTitle(title).value,
-            description=normalize_document_description(
-                description,
-            ),
-            source_type=DocumentSourceType(
-                "file",
-            ).value,
+            description=description,
+            source_type="file",
             source_uri=None,
-            storage_path=stored_path,
+            storage_path=uploaded_path,
             mime_type=content_type,
             file_size_bytes=len(content),
             checksum_sha256=checksum_sha256,
-            status=DocumentStatus(
-                "pending",
-            ).value,
+            status="pending",
             failure_reason=None,
-        )
-
-        return self._to_dto(created)
-
-    def create(
-        self,
-        command: CreateDocumentCommand,
-    ) -> DocumentDto:
-        knowledge_base = (
-            self.knowledge_base_repository.get_by_id(
-                command.knowledge_base_id,
-            )
-        )
-
-        if knowledge_base is None:
-            raise ApplicationError(
-                message=(
-                    "Knowledge base with ID "
-                    f"{command.knowledge_base_id} "
-                    "was not found."
-                ),
-                code="knowledge_base_not_found",
-                status_code=404,
-            )
-
-        created = self.document_repository.create(
-            application_id=knowledge_base.application_id,
-            knowledge_base_id=knowledge_base.id,
-            title=DocumentTitle(
-                command.title,
-            ).value,
-            description=normalize_document_description(
-                command.description,
-            ),
-            source_type=DocumentSourceType(
-                command.source_type,
-            ).value,
-            source_uri=normalize_source_uri(
-                command.source_uri,
-            ),
-            status=DocumentStatus(
-                command.status,
-            ).value,
         )
 
         return self._to_dto(created)
@@ -205,18 +163,10 @@ class DocumentApplicationService:
         self,
         query: ListDocumentsByKnowledgeBaseQuery,
     ) -> list[DocumentDto]:
-        document_status = (
-            None
-            if query.status is None
-            else DocumentStatus(
-                query.status,
-            ).value
-        )
-
         documents = (
             self.document_repository.list_by_knowledge_base_id(
                 knowledge_base_id=query.knowledge_base_id,
-                status=document_status,
+                status=query.status,
             )
         )
 
@@ -229,13 +179,9 @@ class DocumentApplicationService:
         self,
         query: ListDocumentsByStatusQuery,
     ) -> list[DocumentDto]:
-        document_status = DocumentStatus(
-            query.status,
-        ).value
-
         documents = (
             self.document_repository.list_by_status(
-                status=document_status,
+                status=query.status,
             )
         )
 
@@ -246,7 +192,9 @@ class DocumentApplicationService:
 
     def list_all(self) -> list[DocumentDto]:
         documents = (
-            self.document_repository.list_all()
+            self.document_repository.list_by_status(
+                status="pending",
+            )
         )
 
         return [
@@ -258,11 +206,11 @@ class DocumentApplicationService:
         self,
         command: UpdateDocumentCommand,
     ) -> DocumentDto:
-        existing = self.document_repository.get_by_id(
+        document = self.document_repository.get_by_id(
             command.document_id,
         )
 
-        if existing is None:
+        if document is None:
             raise ApplicationError(
                 message="Document not found.",
                 code="document_not_found",
@@ -270,17 +218,13 @@ class DocumentApplicationService:
             )
 
         updated = self.document_repository.update(
-            document_id=existing.id,
+            document_id=document.id,
             title=DocumentTitle(
                 command.title,
             ).value,
-            description=normalize_document_description(
-                command.description,
-            ),
-            status=DocumentStatus(
-                command.status,
-            ).value,
-            failure_reason=existing.failure_reason,
+            description=command.description,
+            status=command.status,
+            failure_reason=None,
         )
 
         return self._to_dto(updated)
@@ -289,84 +233,49 @@ class DocumentApplicationService:
         self,
         command: MarkDocumentProcessingCommand,
     ) -> DocumentDto:
-        existing = self._require_document(
-            command.document_id,
-        )
-
-        updated = self.document_repository.update(
-            document_id=existing.id,
-            title=existing.title,
-            description=existing.description,
+        return self._change_status(
+            document_id=command.document_id,
             status="processing",
             failure_reason=None,
         )
-
-        return self._to_dto(updated)
 
     def mark_ready(
         self,
         command: MarkDocumentReadyCommand,
     ) -> DocumentDto:
-        existing = self._require_document(
-            command.document_id,
-        )
-
-        updated = self.document_repository.update(
-            document_id=existing.id,
-            title=existing.title,
-            description=existing.description,
+        return self._change_status(
+            document_id=command.document_id,
             status="ready",
             failure_reason=None,
         )
-
-        return self._to_dto(updated)
 
     def mark_failed(
         self,
         command: MarkDocumentFailedCommand,
     ) -> DocumentDto:
-        existing = self._require_document(
-            command.document_id,
-        )
-
-        failure_reason = (
-            command.failure_reason.strip()
-            if command.failure_reason
-            else None
-        )
-
-        updated = self.document_repository.update(
-            document_id=existing.id,
-            title=existing.title,
-            description=existing.description,
+        return self._change_status(
+            document_id=command.document_id,
             status="failed",
-            failure_reason=failure_reason,
+            failure_reason=command.failure_reason,
         )
-
-        return self._to_dto(updated)
 
     def archive(
         self,
         command: ArchiveDocumentCommand,
     ) -> DocumentDto:
-        existing = self._require_document(
-            command.document_id,
-        )
-
-        updated = self.document_repository.update(
-            document_id=existing.id,
-            title=existing.title,
-            description=existing.description,
+        return self._change_status(
+            document_id=command.document_id,
             status="archived",
-            failure_reason=existing.failure_reason,
+            failure_reason=None,
         )
 
-        return self._to_dto(updated)
-
-    def _require_document(
+    def _change_status(
         self,
-        document_id: str | UUID,
-    ) -> Document:
+        *,
+        document_id: UUID,
+        status: str,
+        failure_reason: str | None,
+    ) -> DocumentDto:
         document = self.document_repository.get_by_id(
             document_id,
         )
@@ -378,10 +287,54 @@ class DocumentApplicationService:
                 status_code=404,
             )
 
-        return document
+        updated = self.document_repository.update(
+            document_id=document.id,
+            title=document.title,
+            description=document.description,
+            status=status,
+            failure_reason=failure_reason,
+        )
 
-    def _to_dto(
+        return self._to_dto(updated)
+
+    def _upload_to_storage(
         self,
+        *,
+        path: str,
+        content: bytes,
+        content_type: str | None,
+    ) -> str:
+        provider = self.storage_provider
+
+        if hasattr(provider, "upload"):
+            result = provider.upload(
+                path=path,
+                content=content,
+                content_type=content_type,
+            )
+        elif hasattr(provider, "upload_bytes"):
+            result = provider.upload_bytes(
+                path=path,
+                content=content,
+                content_type=content_type,
+            )
+        else:
+            raise ApplicationError(
+                message=(
+                    "Storage provider does not expose "
+                    "upload() or upload_bytes()."
+                ),
+                code="invalid_storage_provider",
+                status_code=500,
+            )
+
+        if isinstance(result, str):
+            return result
+
+        return path
+
+    @staticmethod
+    def _to_dto(
         document: Document,
     ) -> DocumentDto:
         return DocumentDto(

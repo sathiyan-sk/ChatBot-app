@@ -20,22 +20,18 @@ class SqlAlchemyWidgetRepository(WidgetRepositoryInterface):
         display_name: str,
         welcome_message: str,
         placeholder_text: str,
-        theme_mode: str,
-        primary_color: str,
-        position: str,
+        launcher_label: str,
+        theme: str| None,
         is_enabled: bool,
-        allowed_origins: list[str],
     ) -> Widget:
         model = WidgetModel(
             application_id=application_id,
             display_name=display_name,
             welcome_message=welcome_message,
             placeholder_text=placeholder_text,
-            theme_mode=theme_mode,
-            primary_color=primary_color,
-            position=position,
+            launcher_label=launcher_label,
+            theme=theme,
             is_enabled=is_enabled,
-            allowed_origins=allowed_origins,
         )
         self._session.add(model)
         self._session.flush()
@@ -54,11 +50,8 @@ class SqlAlchemyWidgetRepository(WidgetRepositoryInterface):
         display_name: str,
         welcome_message: str,
         placeholder_text: str,
-        theme_mode: str,
-        primary_color: str,
-        position: str,
+        theme: str,
         is_enabled: bool,
-        allowed_origins: list[str],
     ) -> Widget:
         statement = select(WidgetModel).where(WidgetModel.id == widget_id)
         model = self._session.execute(statement).scalar_one()
@@ -66,11 +59,8 @@ class SqlAlchemyWidgetRepository(WidgetRepositoryInterface):
         model.display_name = display_name
         model.welcome_message = welcome_message
         model.placeholder_text = placeholder_text
-        model.theme_mode = theme_mode
-        model.primary_color = primary_color
-        model.position = position
+        model.theme = theme
         model.is_enabled = is_enabled
-        model.allowed_origins = allowed_origins
 
         self._session.flush()
         self._session.refresh(model)

@@ -48,6 +48,7 @@ class ProviderSettings:
 
 @dataclass(slots=True, frozen=True)
 class Settings:
+    
     app: AppSettings
     database: DatabaseSettings
     providers: ProviderSettings
@@ -61,6 +62,10 @@ class Settings:
     vector_store_table_name: str
     vector_store_dimension: int
 
+    provider_timeout_seconds: float = 30.0
+    http_user_agent: str = (
+        "AI-Knowledge-Platform/1.0"
+    )
 
 def load_settings() -> Settings:
     provider_timeout_seconds = float(
@@ -166,6 +171,8 @@ def load_settings() -> Settings:
                 "768",
             )
         ),
+        provider_timeout_seconds=provider_timeout_seconds,
+        http_user_agent=os.getenv("HTTP_USER_AGENT", "AI-Knowledge-Platform/1.0",),
     )
 
 

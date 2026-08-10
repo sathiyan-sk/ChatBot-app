@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -11,7 +12,9 @@ from fastapi import (
     UploadFile,
     status,
 )
-
+from app.api.admin.ingestion import (
+    run_document_ingestion_task,
+)
 from app.api.dependencies import (
     get_document_application_service,
     require_admin,
@@ -52,9 +55,10 @@ router = APIRouter(
 @router.post(
     "/upload",
     response_model=DocumentResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 def upload_document(
+    background_tasks: BackgroundTasks,
     knowledge_base_id: UUID = Form(...),
     title: str = Form(...),
     description: str | None = Form(None),
@@ -74,6 +78,11 @@ def upload_document(
         content=content,
     )
 
+    background_tasks.add_task(
+        run_document_ingestion_task,
+        document_id=str(result.id),
+    )
+
     return DocumentResponse.model_validate(
         result,
         from_attributes=True,
@@ -83,30 +92,37 @@ def upload_document(
 @router.post(
     "",
     response_model=DocumentResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 def create_document(
     request: CreateDocumentRequest,
+    background_tasks: BackgroundTasks,
     service: DocumentApplicationService = Depends(
         get_document_application_service,
     ),
 ) -> DocumentResponse:
     result = service.create(
         CreateDocumentCommand(
-            knowledge_base_id=request.knowledge_base_id,
+            knowledge_base_id=(
+                request.knowledge_base_id
+            ),
             title=request.title,
             description=request.description,
             source_type=request.source_type,
             source_uri=request.source_uri,
-            status=request.status,
+            status="pending",
         )
+    )
+
+    background_tasks.add_task(
+        run_document_ingestion_task,
+        document_id=str(result.id),
     )
 
     return DocumentResponse.model_validate(
         result,
         from_attributes=True,
     )
-
 
 @router.get(
     "/{document_id}",

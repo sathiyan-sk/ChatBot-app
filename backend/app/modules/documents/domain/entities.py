@@ -13,7 +13,7 @@ class Document:
     description: str | None
     source_type: str
     source_uri: str | None
-    storage_path: str
+    storage_path: str | None
     mime_type: str | None
     file_size_bytes: int | None
     checksum_sha256: str | None

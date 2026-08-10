@@ -8,7 +8,7 @@ from datetime import datetime
 class WidgetDto:
     id: str
     application_id: str
-    name: str
+    display_name: str
     theme: str
     launcher_label: str | None
     welcome_message: str | None

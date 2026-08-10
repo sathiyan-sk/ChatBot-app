@@ -28,10 +28,12 @@ from app.modules.documents.application.commands import (
     MarkDocumentProcessingCommand,
     MarkDocumentReadyCommand,
 )
+from app.modules.documents.application.queries import (
+    GetDocumentByIdQuery,
+)
 from app.modules.documents.application.services import (
     DocumentApplicationService,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -52,27 +54,31 @@ def _resolve_source_type(
         None,
     )
 
-    if isinstance(stored_source_type, str):
-        stored_source_type = stored_source_type.strip().lower()
+    if isinstance(
+        stored_source_type,
+        str,
+    ):
+        normalized_type = (
+            stored_source_type.strip().lower()
+        )
 
-    if stored_source_type in {
-        "pdf",
-        "docx",
-        "xlsx",
-        "pptx",
-        "md",
-        "markdown",
-        "txt",
-        "text",
-        "csv",
-        "image",
-        "png",
-        "jpg",
-        "jpeg",
-        "tiff",
-        "website",
-    }:
-        return stored_source_type
+        if normalized_type in {
+            "pdf",
+            "website",
+            "csv",
+            "image",
+            "doc",
+            "docx",
+            "txt",
+            "text",
+            "md",
+            "markdown",
+            "xls",
+            "xlsx",
+            "ppt",
+            "pptx",
+        }:
+            return normalized_type
 
     filename = source_path.rsplit(
         "/",
@@ -82,10 +88,14 @@ def _resolve_source_type(
     if "." not in filename:
         return "file"
 
-    extension = filename.rsplit(
-        ".",
-        1,
-    )[-1].strip().lower()
+    extension = (
+        filename.rsplit(
+            ".",
+            1,
+        )[-1]
+        .strip()
+        .lower()
+    )
 
     extension_aliases = {
         "markdown": "md",
@@ -95,6 +105,8 @@ def _resolve_source_type(
         "png": "image",
         "tiff": "image",
         "webp": "image",
+        "htm": "website",
+        "html": "website",
     }
 
     return extension_aliases.get(
@@ -112,54 +124,19 @@ def _validate_storage_path(
         None,
     )
 
-    if source_path is None:
-        raise HTTPException(
-            status_code=(
-                status.HTTP_422_UNPROCESSABLE_ENTITY
-            ),
-            detail={
-                "code": (
-                    "document_storage_path_missing"
-                ),
-                "message": (
-                    "The document has no stored "
-                    "Supabase Storage path."
-                ),
-            },
-        )
-
-    if not isinstance(source_path, str):
-        raise HTTPException(
-            status_code=(
-                status.HTTP_422_UNPROCESSABLE_ENTITY
-            ),
-            detail={
-                "code": (
-                    "document_storage_path_invalid"
-                ),
-                "message": (
-                    "The document storage path "
-                    "must be a string."
-                ),
-            },
+    if not isinstance(
+        source_path,
+        str,
+    ):
+        raise ValueError(
+            "Document storage path is missing."
         )
 
     normalized_path = source_path.strip()
 
     if not normalized_path:
-        raise HTTPException(
-            status_code=(
-                status.HTTP_422_UNPROCESSABLE_ENTITY
-            ),
-            detail={
-                "code": (
-                    "document_storage_path_empty"
-                ),
-                "message": (
-                    "The document storage path "
-                    "is empty."
-                ),
-            },
+        raise ValueError(
+            "Document storage path is empty."
         )
 
     if normalized_path.lower() in {
@@ -167,22 +144,225 @@ def _validate_storage_path(
         "none",
         "string",
     }:
-        raise HTTPException(
-            status_code=(
-                status.HTTP_422_UNPROCESSABLE_ENTITY
-            ),
-            detail={
-                "code": (
-                    "document_storage_path_invalid"
-                ),
-                "message": (
-                    "The document has an invalid "
-                    "Supabase Storage path."
-                ),
-            },
+        raise ValueError(
+            "Document storage path is invalid."
         )
 
     return normalized_path
+
+
+def _build_pipeline_request(
+    document: object,
+    source_path: str,
+    source_type: str,
+) -> KnowledgeIngestionPipelineRequest:
+    return KnowledgeIngestionPipelineRequest(
+        document_id=str(getattr(document,"id",)
+        ),
+        knowledge_base_id=str(getattr(document,"knowledge_base_id",)
+        ),
+        source_type=source_type,
+        source_path=source_path,
+        source_identifier=source_path,
+    )
+
+
+
+def _resolve_source_identifier(
+    document: object,
+) -> str:
+    source_type = getattr(
+        document,
+        "source_type",
+        None,
+    )
+
+    normalized_source_type = (
+        source_type.strip().lower()
+        if isinstance(source_type, str)
+        else ""
+    )
+
+    if normalized_source_type == "website":
+        source_uri = getattr(
+            document,
+            "source_uri",
+            None,
+        )
+
+        if not isinstance(
+            source_uri,
+            str,
+        ):
+            raise ValueError(
+                "Website source URI is missing."
+            )
+
+        normalized_uri = source_uri.strip()
+
+        if not normalized_uri:
+            raise ValueError(
+                "Website source URI is empty."
+            )
+
+        if not (
+            normalized_uri.startswith(
+                "http://"
+            )
+            or normalized_uri.startswith(
+                "https://"
+            )
+        ):
+            raise ValueError(
+                "Website source URI must use "
+                "http or https."
+            )
+
+        return normalized_uri
+
+    return _validate_storage_path(
+        document,
+    )
+
+
+def run_document_ingestion_task(
+    document_id: str,
+) -> None:
+    from app.main import app
+    from types import SimpleNamespace
+    request_context = SimpleNamespace(
+        app=app
+    )
+
+    logger.info(
+        "Background request context type: %s",
+        type(request_context).__name__,
+    )
+    session_factory = (
+        app.state.session_factory
+    )
+    if isinstance(request_context, tuple):
+        raise RuntimeError(
+            "request_context must not be a tuple"
+        )
+
+    session: Session = session_factory()
+
+    try:
+        document_service = (
+            get_document_application_service(
+                request=request_context,
+                session=session,
+            )
+        )
+
+        document = document_service.get_by_id(
+            GetDocumentByIdQuery(
+                document_id=document_id,
+            )
+        )
+
+        document_service.mark_processing(
+            MarkDocumentProcessingCommand(
+                document_id=document_id,
+            )
+        )
+
+        source_identifier = (
+        _resolve_source_identifier(
+        document,
+            )
+        )
+
+        source_type = _resolve_source_type(
+        document,
+        source_identifier,
+        )
+
+        ingestion_pipeline = (
+            get_knowledge_ingestion_pipeline(
+                source_type=source_type,
+                request=request_context,
+                session=session,
+            )
+        )
+
+        pipeline_request = (
+            _build_pipeline_request(
+                document=document,
+                source_path=source_identifier,
+                source_type=source_type,
+            )
+        )
+
+        logger.info(
+            "Starting background document ingestion",
+            extra={
+                "document_id": document_id,
+                "source_type": source_type,
+                "source_path": source_identifier,
+            },
+        )
+
+        ingestion_pipeline.run(
+            pipeline_request,
+        )
+
+        document_service.mark_ready(
+            MarkDocumentReadyCommand(
+                document_id=document_id,
+            )
+        )
+
+        session.commit()
+
+        logger.info(
+            "Background document ingestion completed",
+            extra={
+                "document_id": document_id,
+                "source_type": source_type,
+            },
+        )
+
+    except Exception as exc:
+        session.rollback()
+
+        logger.exception(
+            "Background document ingestion failed",
+            extra={
+                "document_id": document_id,
+            },
+        )
+
+        try:
+            document_service = (
+                get_document_application_service(
+                    request=request_context,
+                    session=session,
+                )
+            )
+
+            document_service.mark_failed(
+                MarkDocumentFailedCommand(
+                    document_id=document_id,
+                    failure_reason=str(exc),
+                )
+            )
+
+            session.commit()
+
+        except Exception:
+            session.rollback()
+
+            logger.exception(
+                "Could not mark document as failed",
+                extra={
+                    "document_id": document_id,
+                },
+            )
+
+    finally:
+        session.close()
 
 
 @router.post(
@@ -209,7 +389,7 @@ def start_ingestion(
             )
         )
 
-        source_path = _validate_storage_path(
+        source_path = _resolve_source_identifier(
             processing_document,
         )
 
@@ -236,31 +416,11 @@ def start_ingestion(
         )
 
         pipeline_request = (
-            KnowledgeIngestionPipelineRequest(
-                document_id=str(
-                    payload.document_id,
-                ),
-                knowledge_base_id=str(
-                    processing_document.knowledge_base_id,
-                ),
-                source_type=source_type,
+            _build_pipeline_request(
+                document=processing_document,
                 source_path=source_path,
-                source_identifier=source_path,
+                source_type=source_type,
             )
-        )
-
-        logger.info(
-            "Starting knowledge ingestion",
-            extra={
-                "document_id": str(
-                    payload.document_id,
-                ),
-                "knowledge_base_id": str(
-                    processing_document.knowledge_base_id,
-                ),
-                "source_type": source_type,
-                "source_path": source_path,
-            },
         )
 
         ingestion_pipeline.run(
@@ -273,52 +433,20 @@ def start_ingestion(
             )
         )
 
-        logger.info(
-            "Knowledge ingestion completed",
-            extra={
-                "document_id": str(
-                    payload.document_id,
-                ),
-                "source_type": source_type,
-                "source_path": source_path,
-            },
-        )
-
         return IngestionResponse(
             document_id=payload.document_id,
             status="ready",
         )
 
-    except HTTPException as exc:
-        logger.exception(
-            "Knowledge ingestion rejected for "
-            "document_id=%s",
-            payload.document_id,
-        )
-
-        session.rollback()
-
-        if processing_document is not None:
-            document_service.mark_failed(
-                MarkDocumentFailedCommand(
-                    document_id=payload.document_id,
-                    failure_reason=str(
-                        exc.detail,
-                    ),
-                )
-            )
-
-        raise
-
     except Exception as exc:
+        session.rollback()
 
         logger.exception(
-        "Knowledge ingestion failed for "
-        "document_id=%s",
-        payload.document_id,
+            "Manual document ingestion failed",
+            extra={
+                "document_id": payload.document_id,
+            },
         )
-
-        session.rollback()
 
         try:
             document_service.mark_failed(
@@ -328,9 +456,21 @@ def start_ingestion(
                 )
             )
         except Exception:
+            session.rollback()
+
             logger.exception(
-                "Could not mark document as failed: %s",
-                payload.document_id,
+                "Could not mark document as failed",
+                extra={
+                    "document_id": payload.document_id,
+                },
             )
 
-            raise
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "document_ingestion_failed",
+                "message": (
+                    "Document ingestion failed."
+                ),
+            },
+        ) from exc

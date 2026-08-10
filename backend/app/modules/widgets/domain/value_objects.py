@@ -16,7 +16,7 @@ class WidgetThemeMode:
         if normalized not in self._ALLOWED_VALUES:
             raise ApplicationError(
                 message="Invalid widget theme mode.",
-                code="invalid_widget_theme_mode",
+                code="invalid_widget_theme",
                 status_code=400,
             )
         object.__setattr__(self, "value", normalized)

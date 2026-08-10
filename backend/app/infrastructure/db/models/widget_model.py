@@ -18,7 +18,7 @@ class WidgetModel(UuidPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("applications.id", ondelete="CASCADE"),
         nullable=False,
     )
-    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(150), nullable=False)
     theme: Mapped[str] = mapped_column(String(50), nullable=False, default="light", server_default="light")
     launcher_label: Mapped[str | None] = mapped_column(String(100), nullable=True)
     welcome_message: Mapped[str | None] = mapped_column(Text, nullable=True)

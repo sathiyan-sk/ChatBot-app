@@ -11,11 +11,9 @@ def map_widget_model_to_entity(model: WidgetModel) -> Widget:
         display_name=model.display_name,
         welcome_message=model.welcome_message,
         placeholder_text=model.placeholder_text,
-        theme_mode=model.theme_mode,
-        primary_color=model.primary_color,
-        position=model.position,
+        launcher_label=model.launcher_label,
+        theme=model.theme,
         is_enabled=model.is_enabled,
-        allowed_origins=list(model.allowed_origins or []),
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
