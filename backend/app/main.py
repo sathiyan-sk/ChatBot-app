@@ -10,6 +10,7 @@ from app.api.router import api_router
 from app.composition import build_application_container
 from app.config.settings import get_settings
 from app.infrastructure.db.session import create_session_factory
+from fastapi.middleware.cors import CORSMiddleware
 
 
 @asynccontextmanager
@@ -37,12 +38,20 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["https://your-website.com", "http://localhost:5500", "http://localhost:3000",],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "X-Widget-Key", "X-API-Key", "Authorization"],
+    )
+
     register_exception_handlers(app)
     app.include_router(api_router)
 
     @app.get("/health", tags=["Health"])
     def health_check() -> dict[str, str]:
-        return {"status": "ok"}
+        return {"status": "OK"}
 
     return app
 
