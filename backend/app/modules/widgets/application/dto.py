@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from uuid import UUID
 
 
 @dataclass(slots=True, frozen=True)
 class WidgetDto:
-    id: str
-    application_id: str
+    id: UUID
+    application_id: UUID
     display_name: str
+    public_key: str | None
     theme: str
     launcher_label: str | None
     welcome_message: str | None

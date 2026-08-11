@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from uuid import UUID
 
 from app.modules.widgets.domain.entities import Widget
 
@@ -10,8 +11,9 @@ class WidgetRepositoryInterface(ABC):
     def create(
         self,
         *,
-        application_id: str,
+        application_id: UUID | str,
         display_name: str,
+        public_key: str,
         theme: str,
         launcher_label: str | None,
         welcome_message: str | None,
@@ -21,14 +23,31 @@ class WidgetRepositoryInterface(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_by_application_id(self, application_id: str) -> Widget | None:
+    def get_by_public_key(
+    self,
+    public_key: str,
+) -> Widget | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_by_id(
+        self,
+        widget_id: UUID | str,
+    ) -> Widget | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_by_application_id(
+        self,
+        application_id: UUID | str,
+    ) -> Widget | None:
         raise NotImplementedError
 
     @abstractmethod
     def update(
         self,
         *,
-        application_id: str,
+        widget_id: UUID | str,
         display_name: str,
         theme: str,
         launcher_label: str | None,
@@ -36,4 +55,11 @@ class WidgetRepositoryInterface(ABC):
         placeholder_text: str | None,
         is_enabled: bool,
     ) -> Widget:
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete(
+        self,
+        widget_id: UUID | str,
+    ) -> None:
         raise NotImplementedError

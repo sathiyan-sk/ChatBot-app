@@ -1,28 +1,40 @@
 from __future__ import annotations
 
 from datetime import datetime
-
-from pydantic import BaseModel, Field, ConfigDict
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict, Field
+
+
 class CreateKnowledgeBaseRequest(BaseModel):
-    application_id: str = Field(..., min_length=1)
-    name: str = Field(..., min_length=1, max_length=150)
-    description: str | None = Field(default=None, max_length=2000)
-    status: str = Field(default="ready", min_length=1)
+    application_id: UUID
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=150,
+    )
+    status: str = "ready"
 
 
 class UpdateKnowledgeBaseRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=150)
-    description: str | None = Field(default=None, max_length=2000)
-    status: str = Field(..., min_length=1)
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=150,
+    )
+    status: str = "ready"
 
 
 class KnowledgeBaseResponse(BaseModel):
     id: UUID
     application_id: UUID
     name: str
-    description: str | None
+    slug: str
     status: str
+    is_active: bool
     created_at: datetime
     updated_at: datetime
+
+    model_config = ConfigDict(
+        from_attributes=True,
+    )

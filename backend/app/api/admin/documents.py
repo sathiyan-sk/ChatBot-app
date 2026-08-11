@@ -110,7 +110,6 @@ def create_document(
             description=request.description,
             source_type=request.source_type,
             source_uri=request.source_uri,
-            status="pending",
         )
     )
 

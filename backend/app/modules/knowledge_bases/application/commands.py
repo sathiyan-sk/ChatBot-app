@@ -7,7 +7,6 @@ from dataclasses import dataclass
 class CreateKnowledgeBaseCommand:
     application_id: str
     name: str
-    description: str | None
     status: str = "ready"
 
 
@@ -15,7 +14,6 @@ class CreateKnowledgeBaseCommand:
 class UpdateKnowledgeBaseCommand:
     knowledge_base_id: str
     name: str
-    description: str | None
     status: str
 
 

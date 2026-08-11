@@ -96,15 +96,21 @@ class ApplicationProvisioningSqlAlchemyRepository(ApplicationProvisioningReposit
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def create_default_knowledge_base(self, *, application_id: str, application_name: str) -> None:
-        base_slug= build_application_slug(application_name)
-        slug = f"{base_slug}-knowledge-base"
+    def create_default_knowledge_base(
+        self,
+        *,
+        application_id: str,
+        application_name: str,
+    ) -> None:
+        base_slug = build_application_slug(application_name)
+        slug = f"{base_slug}-kb-{application_id[:8]}"
 
         model = KnowledgeBaseModel(
             application_id=application_id,
             name=f"{application_name} Knowledge Base",
-            status="ready",
             slug=slug,
+            status="ready",
+            is_active=True,
         )
         self._session.add(model)
         self._session.flush()
@@ -138,7 +144,6 @@ class ApplicationProvisioningSqlAlchemyRepository(ApplicationProvisioningReposit
         )
         self._session.add(model)
         self._session.flush()
-        #return map_application_model_to_entity(model)
 
     def get_model_by_id(self, application_id: str) -> ApplicationModel | None:
         statement = select(ApplicationModel).where(ApplicationModel.id == application_id)
@@ -155,30 +160,3 @@ class ApplicationProvisioningSqlAlchemyRepository(ApplicationProvisioningReposit
         statement = select(ApplicationModel).order_by(ApplicationModel.created_at.desc())
         models = self._session.execute(statement).scalars().all()
         return [map_application_model_to_entity(item) for item in models]
-
-def update(
-    self,
-    *,
-    application_id: str,
-    name: str,
-    slug: str,
-    description: str | None,
-    client_type: str,
-    allowed_origins: list[str] | None,
-    is_active: bool,
-) -> Application:
-    model = self.get_model_by_id(application_id)
-    if model is None:
-        raise ValueError(f"Application '{application_id}' does not exist.")
-
-    model.name = name
-    model.slug = slug
-    model.description = description
-    model.client_type = client_type
-    model.allowed_origins = allowed_origins or []
-    model.is_active = is_active
-
-    self._session.flush()
-    self._session.refresh(model)
-
-    return map_application_model_to_entity(model)

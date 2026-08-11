@@ -18,7 +18,6 @@ class CreateDocumentRequest(BaseModel):
     description: str | None = None
     source_type: str = "file"
     source_uri: str | None = None
-    status: str = "pending"
 
 
 class UpdateDocumentRequest(BaseModel):

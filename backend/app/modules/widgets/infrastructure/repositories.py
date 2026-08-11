@@ -1,67 +1,168 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from uuid import UUID
+
+from sqlalchemy import (
+    delete as sqlalchemy_delete,
+    select,
+)
 from sqlalchemy.orm import Session
 
+from app.infrastructure.db.models.widget_model import (
+    WidgetModel,
+)
 from app.modules.widgets.domain.entities import Widget
-from app.modules.widgets.domain.repository_interfaces import WidgetRepositoryInterface
-from app.modules.widgets.infrastructure.mappers import map_widget_model_to_entity
-from app.modules.widgets.infrastructure.orm_models import WidgetModel
+from app.modules.widgets.domain.repository_interfaces import (
+    WidgetRepositoryInterface,
+)
+from app.modules.widgets.infrastructure.mappers import (
+    map_widget_model_to_entity,
+)
 
 
-class SqlAlchemyWidgetRepository(WidgetRepositoryInterface):
-    def __init__(self, session: Session) -> None:
+class SqlAlchemyWidgetRepository(
+    WidgetRepositoryInterface,
+):
+    def __init__(
+        self,
+        session: Session,
+    ) -> None:
         self._session = session
 
     def create(
         self,
         *,
-        application_id: str,
+        application_id: UUID | str,
         display_name: str,
-        welcome_message: str,
-        placeholder_text: str,
-        launcher_label: str,
-        theme: str| None,
+        public_key: str,
+        theme: str,
+        launcher_label: str | None,
+        welcome_message: str | None,
+        placeholder_text: str | None,
         is_enabled: bool,
     ) -> Widget:
         model = WidgetModel(
-            application_id=application_id,
+            application_id=str(
+                application_id,
+            ),
             display_name=display_name,
+            public_key=public_key,
+            theme=theme,
+            launcher_label=launcher_label,
             welcome_message=welcome_message,
             placeholder_text=placeholder_text,
-            launcher_label=launcher_label,
-            theme=theme,
             is_enabled=is_enabled,
         )
+
         self._session.add(model)
         self._session.flush()
         self._session.refresh(model)
+
         return map_widget_model_to_entity(model)
 
-    def get_by_application_id(self, application_id: str) -> Widget | None:
-        statement = select(WidgetModel).where(WidgetModel.application_id == application_id)
-        model = self._session.execute(statement).scalar_one_or_none()
-        return None if model is None else map_widget_model_to_entity(model)
+    def get_by_id(
+        self,
+        widget_id: UUID | str,
+    ) -> Widget | None:
+        statement = select(WidgetModel).where(
+            WidgetModel.id == str(widget_id),
+        )
+
+        model = self._session.execute(
+            statement,
+        ).scalar_one_or_none()
+
+        if model is None:
+            return None
+
+        return map_widget_model_to_entity(model)
+
+    def get_by_application_id(
+        self,
+        application_id: UUID | str,
+    ) -> Widget | None:
+        statement = select(WidgetModel).where(
+            WidgetModel.application_id
+            == str(application_id),
+        )
+
+        model = self._session.execute(
+            statement,
+        ).scalar_one_or_none()
+
+        if model is None:
+            return None
+
+        return map_widget_model_to_entity(model)
+
+    def get_by_public_key(
+        self,
+        public_key: str,
+    ) -> Widget | None:
+        normalized_key = public_key.strip()
+
+        if not normalized_key:
+            return None
+
+        statement = select(WidgetModel).where(
+            WidgetModel.public_key
+            == normalized_key,
+        )
+
+        model = self._session.execute(
+            statement,
+        ).scalar_one_or_none()
+
+        if model is None:
+            return None
+
+        return map_widget_model_to_entity(model)
 
     def update(
         self,
         *,
-        widget_id: str,
+        widget_id: UUID | str,
         display_name: str,
-        welcome_message: str,
-        placeholder_text: str,
         theme: str,
+        launcher_label: str | None,
+        welcome_message: str | None,
+        placeholder_text: str | None,
         is_enabled: bool,
     ) -> Widget:
-        statement = select(WidgetModel).where(WidgetModel.id == widget_id)
-        model = self._session.execute(statement).scalar_one()
+        statement = select(WidgetModel).where(
+            WidgetModel.id == str(widget_id),
+        )
+
+        model = self._session.execute(
+            statement,
+        ).scalar_one_or_none()
+
+        if model is None:
+            raise LookupError(
+                "Widget not found."
+            )
 
         model.display_name = display_name
+        model.theme = theme
+        model.launcher_label = launcher_label
         model.welcome_message = welcome_message
         model.placeholder_text = placeholder_text
-        model.theme = theme
         model.is_enabled = is_enabled
 
         self._session.flush()
         self._session.refresh(model)
+
         return map_widget_model_to_entity(model)
+
+    def delete(
+        self,
+        widget_id: UUID | str,
+    ) -> None:
+        statement = sqlalchemy_delete(
+            WidgetModel,
+        ).where(
+            WidgetModel.id == str(widget_id),
+        )
+
+        self._session.execute(statement)
+        self._session.flush()

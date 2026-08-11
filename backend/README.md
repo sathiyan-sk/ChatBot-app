@@ -99,6 +99,16 @@ run by setup runner file(run.py)
 (or)
 uvicorn app.main:app --reload
 
+
+## Restart Steps
+- Stop all Uvicorn processes:
+Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
+
+uvicorn app.main:app
+
+- clear cache and py files by;
+Get-ChildItem -Path .\app -Recurse -Directory -Filter __pycache__ |
+    Remove-Item -Recurse -Force
 ---
 
 finalized application structure:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from uuid import UUID, uuid4
-
+from typing import ClassVar
 from app.core.exceptions import ApplicationError
 from app.modules.documents.application.commands import (
     ArchiveDocumentCommand,
@@ -39,6 +39,13 @@ class DocumentApplicationService:
     knowledge_base_repository: KnowledgeBaseRepositoryInterface
     storage_provider: object | None = None
 
+    _ALLOWED_TRANSITIONS: ClassVar[dict[str, set[str]]] = {
+        "pending": {"processing", "failed", "archived"},
+        "processing": {"ready", "failed", "archived"},
+        "ready": {"archived", "processing"},
+        "failed": {"processing", "archived"},
+        "archived": set(),
+    }
     def create(
         self,
         command: CreateDocumentCommand,
@@ -269,6 +276,7 @@ class DocumentApplicationService:
             failure_reason=None,
         )
 
+
     def _change_status(
         self,
         *,
@@ -286,6 +294,18 @@ class DocumentApplicationService:
                 code="document_not_found",
                 status_code=404,
             )
+
+        allowed=self._ALLOWED_TRANSITIONS.get(document.status, set())
+
+        if status not in allowed:
+            raise ApplicationError(
+            message=(
+                f"Cannot change document status from "
+                f"'{document.status}' to '{status}'."
+            ),
+            code="document_invalid_status_transition",
+            status_code=409,
+        )
 
         updated = self.document_repository.update(
             document_id=document.id,

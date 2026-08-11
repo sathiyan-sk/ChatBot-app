@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-
-from pydantic import BaseModel, Field
+from uuid import UUID
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class ResolveConversationRequest(BaseModel):
@@ -24,8 +24,11 @@ class UpdateConversationRequest(BaseModel):
 
 
 class MessageResponse(BaseModel):
-    id: str
-    conversation_id: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    conversation_id: UUID
     role: str
     content: str
     sequence_number: int
@@ -35,8 +38,11 @@ class MessageResponse(BaseModel):
 
 
 class ConversationResponse(BaseModel):
-    id: str
-    application_id: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    application_id: UUID
     conversation_identity: str
     title: str | None
     summary: str | None
@@ -46,5 +52,8 @@ class ConversationResponse(BaseModel):
 
 
 class ConversationDetailResponse(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
     conversation: ConversationResponse
     messages: list[MessageResponse]

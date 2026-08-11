@@ -9,9 +9,6 @@ from fastapi import (
     status,
 )
 
-from app.api.client.dependencies import (
-    get_client_application_context,
-)
 from app.api.dependencies import (
     get_chat_application_service,
 )
@@ -29,7 +26,10 @@ from app.modules.question_answering.application.services import (
 from app.modules.security.domain.entities import (
     ClientApplicationContext,
 )
-
+from app.api.client.dependencies import (
+    get_client_application_context,
+    get_widget_application_id,
+)
 
 router = APIRouter(
     prefix="/client/chat",
@@ -92,3 +92,47 @@ def create_chat_message(
     citations=citations,
     created_at=datetime.now(timezone.utc),
 )
+
+@router.post(
+    "/widget/messages",
+    response_model=ChatMessageResponse,
+    status_code=status.HTTP_200_OK,
+)
+def create_widget_chat_message(
+    request: ChatMessageRequest,
+    application_id: str = Depends(
+        get_widget_application_id,
+    ),
+    service: ChatApplicationService = Depends(
+        get_chat_application_service,
+    ),
+) -> ChatMessageResponse:
+    result = service.ask(
+        AskChatQuestionCommand(
+            application_id=application_id,
+            conversation_identity=(
+                request.conversation_identity
+            ),
+            message_text=request.message,
+            conversation_title=(
+                request.conversation_title
+            ),
+        )
+    )
+
+    citations = [
+        CitationResponse(
+            document_id=item.document_id,
+            title=item.document_title,
+            chunk_id=item.chunk_id,
+            source_uri=item.source_uri,
+        )
+        for item in result.citations
+    ]
+
+    return ChatMessageResponse(
+        conversation_id=result.conversation_id,
+        answer=result.answer_text,
+        citations=citations,
+        created_at=datetime.now(timezone.utc),
+    )
