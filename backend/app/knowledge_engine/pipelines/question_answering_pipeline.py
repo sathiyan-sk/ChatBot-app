@@ -6,7 +6,9 @@ from app.knowledge_engine.generation.citation_builder import CitationBuilder
 from app.knowledge_engine.generation.prompt_builder import PromptBuilder
 from app.knowledge_engine.generation.response_formatter import ResponseFormatter
 from app.knowledge_engine.generation.response_generator import ResponseGenerator
-from app.knowledge_engine.retrieval.conversation_context_builder import ConversationContextBuilder
+from app.knowledge_engine.retrieval.conversation_context_builder import (
+    ConversationContextBuilder,
+)
 from app.knowledge_engine.retrieval.hybrid_retriever import HybridRetriever
 from app.knowledge_engine.retrieval.metadata_filter import MetadataFilter
 from app.knowledge_engine.retrieval.query_embedder import QueryEmbedder
@@ -36,11 +38,13 @@ class QuestionAnsweringPipeline:
         conversation_context = self.conversation_context_builder.build(request.messages)
         query_embedding = self.query_embedder.embed(request.query_text)
 
+        # Retrieve MORE chunks initially for better coverage
+        initial_top_k = max(request.top_k * 2, 10)  # At least 10, or 2x the final top_k
         retrieved_chunks = self.hybrid_retriever.retrieve(
             knowledge_base_id=request.knowledge_base_id,
             query_text=request.query_text,
             query_embedding=query_embedding,
-            top_k=request.top_k,
+            top_k=initial_top_k,
         )
         # TEMPORARY DEBUG LOGGING
         import logging
@@ -54,7 +58,7 @@ class QuestionAnsweringPipeline:
         reranked_chunks = self.reranker.rerank(
             query_text=request.query_text,
             chunks=filtered_chunks,
-            top_k=request.top_k,
+            top_k=10,
         )
 
         system_prompt = self.prompt_builder.build_system_prompt()

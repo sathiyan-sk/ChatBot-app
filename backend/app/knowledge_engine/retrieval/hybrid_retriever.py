@@ -18,6 +18,7 @@ class HybridRetriever:
         query_embedding: list[float],
         top_k: int,
     ) -> list[RetrievedChunk]:
+        # Retrieve from both sources
         semantic_chunks = self.vector_store_contract.similarity_search(
             knowledge_base_id=knowledge_base_id,
             query_embedding=query_embedding,
@@ -29,11 +30,39 @@ class HybridRetriever:
             top_k=top_k,
         )
 
-        merged: dict[str, RetrievedChunk] = {}
-        for chunk in semantic_chunks + keyword_chunks:
+        # Normalize scores to 0-1 range for fair comparison
+        def normalize_score(chunks: list[RetrievedChunk]) -> list[tuple[RetrievedChunk, float]]:
+            if not chunks:
+                return []
+            max_score = max(c.score for c in chunks)
+            min_score = min(c.score for c in chunks)
+            score_range = max_score - min_score if max_score != min_score else 1.0
+            return [
+                (chunk, (chunk.score - min_score) / score_range)
+                for chunk in chunks
+            ]
+
+        normalized_semantic = normalize_score(semantic_chunks)
+        normalized_keyword = normalize_score(keyword_chunks)
+
+        # Merge with weighted combination (60% semantic, 40% keyword)
+        merged: dict[str, tuple[RetrievedChunk, float]] = {}
+
+        for chunk, norm_score in normalized_semantic:
+            key = f"{chunk.document_id}:{chunk.chunk_id}"
+            merged[key] = (chunk, 0.6 * norm_score)
+
+        for chunk, norm_score in normalized_keyword:
             key = f"{chunk.document_id}:{chunk.chunk_id}"
             existing = merged.get(key)
-            if existing is None or chunk.score > existing.score:
-                merged[key] = chunk
+            if existing:
+                # Add keyword score to existing semantic score
+                existing_chunk, existing_score = existing
+                combined_score = existing_score + (0.4 * norm_score)
+                merged[key] = (existing_chunk, combined_score)
+            else:
+                merged[key] = (chunk, 0.4 * norm_score)
 
-        return sorted(merged.values(), key=lambda item: item.score, reverse=True)
+        # Sort by combined score and return top_k
+        sorted_chunks = sorted(merged.values(), key=lambda x: x[1], reverse=True)
+        return [chunk for chunk, _ in sorted_chunks[:top_k]]

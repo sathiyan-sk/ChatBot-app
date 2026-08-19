@@ -48,10 +48,14 @@ class PromptBuilder:
 
         # Final user prompt
         user_prompt = (
-            f"{conversation_text}"
-            f"Context:\n{context_text}\n\n"
-            f"Question: {query_text}\n\n"
-            "Answer:"
+        f"{conversation_text}"
+        f"Below is the knowledge base context for answering the question.\n\n"
+        f"{context_text}\n\n"
+        f"IMPORTANT: Answer the question below using ONLY the information from the context above. "
+        f"If the context contains the answer, provide a complete, direct answer. "
+        f"If the context does not contain enough information, say so clearly.\n\n"
+        f"Question: {query_text}\n\n"
+        f"Answer:"
         )
 
         return user_prompt

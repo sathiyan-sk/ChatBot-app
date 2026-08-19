@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from collections import Counter
 
 from app.knowledge_engine.domain.models import KnowledgeChunk
 
@@ -58,7 +57,7 @@ class Reranker:
                 )
             )
 
-        return reranked
+        return reranked[:top_k]
 
     def _tokenize(self, text: str) -> list[str]:
         # Simple tokenization: lowercase, remove punctuation, split
