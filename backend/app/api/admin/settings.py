@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from dataclasses import asdict
 from fastapi import APIRouter, Depends, status
 
 from app.api.dependencies import get_settings_application_service
@@ -33,7 +33,7 @@ def create_settings(
             citations_enabled=request.citations_enabled,
         )
     )
-    return SettingsResponse.model_validate(result.__dict__)
+    return SettingsResponse.model_validate(asdict(result))
 
 
 @router.get("/by-application/{application_id}", response_model=SettingsResponse)
@@ -44,8 +44,10 @@ def get_settings_by_application(
     result = service.get_by_application(
         GetSettingsByApplicationQuery(application_id=application_id)
     )
-    return SettingsResponse.model_validate(result.__dict__)
-
+    data = asdict(result)
+    data["id"] = str(data["id"])
+    data["application_id"] = str(data["application_id"])
+    return SettingsResponse.model_validate(data)
 
 @router.put("/by-application/{application_id}", response_model=SettingsResponse)
 def update_settings(
@@ -63,4 +65,4 @@ def update_settings(
             citations_enabled=request.citations_enabled,
         )
     )
-    return SettingsResponse.model_validate(result.__dict__)
+    return SettingsResponse.model_validate(asdict(result))

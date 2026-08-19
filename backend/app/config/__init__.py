@@ -1,1 +1,1 @@
-__all__ = ["settings", "database", "logging", "security", "provider_registry"]
+__all__ = ["database", "logging", "provider_registry", "security", "settings"]

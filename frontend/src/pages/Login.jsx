@@ -1,37 +1,49 @@
-import React, { useState } from "react";
-import { Lock, User, Layers, ShieldCheck, ArrowRight, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { Lock, ShieldCheck, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Login({ onLoginSuccess }) {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email || !password || isLoading) return;
+    if (!username.trim() || !password.trim() || isLoading) return;
 
     setIsLoading(true);
-    
-    // Hardcoded credentials checked securely by default
-    if ((email === "admin" || email === "admin@example.com") && password === "admin123") {
-      setTimeout(() => {
-        setIsLoading(false);
+
+    try {
+      // Use HTTP Basic Auth
+      const credentials = btoa(`${username.trim()}:${password.trim()}`);
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_BACKEND_URL || "http://localhost:8000"}/api/admin/applications`,
+        {
+          headers: {
+            "Authorization": `Basic ${credentials}`,
+          },
+        }
+      );
+
+      if (response.ok) {
         const userSession = {
-          email: "admin@example.com",
-          role: "admin",
-          name: "RAG Administrator",
-          token: "mock_jwt_token_oceanrag_2026"
+          username: username.trim(),
+          password: password.trim(),
+          authenticatedAt: new Date().toISOString(),
         };
+        
         localStorage.setItem("oceanrag_admin_session", JSON.stringify(userSession));
         onLoginSuccess(userSession);
         toast.success("Welcome back, Administrator!");
-      }, 1200);
-    } else {
-      setTimeout(() => {
-        setIsLoading(false);
-        toast.error("Invalid administrator UserID or Password.");
-      }, 800);
+      } else {
+        toast.error("Invalid credentials. Please try again.");
+      }
+    } catch (error) {
+      console.error("Authentication failed:", error);
+      toast.error("Connection error. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -45,7 +57,7 @@ export default function Login({ onLoginSuccess }) {
         {/* Brand Header */}
         <div className="text-center mb-8">
           <div className="inline-flex p-3 bg-white/5 rounded-2xl border border-white/10 glow-cyan mb-4">
-            <Layers className="h-8 w-8 text-[#00D4FF]" />
+            <ShieldCheck className="h-8 w-8 text-[#00D4FF]" />
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
             RENAI<span className="text-[#00D4FF]">ADMIN</span> Console
@@ -67,19 +79,19 @@ export default function Login({ onLoginSuccess }) {
           <form onSubmit={handleSubmit} className="space-y-5" data-testid="login-form">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-2">
-                UserID / Email
+                Username
               </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500">
-                  <User className="h-4 w-4" />
+                  <Lock className="h-4 w-4" />
                 </span>
                 <input
                   type="text"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="e.g. admin"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Enter username"
                   className="w-full bg-[#0B1221] border border-white/10 focus:border-[#00D4FF] text-white text-sm rounded-xl pl-10 pr-4 py-3 outline-none transition-all duration-300 focus:ring-1 focus:ring-[#00D4FF]"
-                  data-testid="login-email-input"
+                  data-testid="login-username-input"
                   required
                 />
               </div>
@@ -97,7 +109,7 @@ export default function Login({ onLoginSuccess }) {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="Enter password"
                   className="w-full bg-[#0B1221] border border-white/10 focus:border-[#00D4FF] text-white text-sm rounded-xl pl-10 pr-4 py-3 outline-none transition-all duration-300 focus:ring-1 focus:ring-[#00D4FF]"
                   data-testid="login-password-input"
                   required
@@ -105,10 +117,11 @@ export default function Login({ onLoginSuccess }) {
               </div>
             </div>
 
-            {/* Quick Helper Credentials */}
+            {/* Credential Helper */}
             <div className="p-3 bg-white/5 rounded-xl border border-white/5 text-[11px] text-slate-400">
-              <span className="font-semibold text-slate-300">Demo Credentials:</span><br />
-              User ID: <code className="text-slate-200">admin</code> • Pass: <code className="text-slate-200">admin123</code>
+              <span className="font-semibold text-slate-300">Default Credentials:</span><br />
+              Username: <code className="text-slate-200">admin</code><br />
+              Password: <code className="text-slate-200">change-me</code>
             </div>
 
             <button
@@ -120,11 +133,11 @@ export default function Login({ onLoginSuccess }) {
               {isLoading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin text-[#040914]" />
-                  <span>AUTHORIZING SESSION...</span>
+                  <span>AUTHORIZING...</span>
                 </>
               ) : (
                 <>
-                  <span>LOGIN CONTRACT</span>
+                  <span>LOGIN</span>
                   <ArrowRight className="h-4 w-4 text-[#040914]" />
                 </>
               )}

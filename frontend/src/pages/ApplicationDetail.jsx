@@ -1,16 +1,14 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import axios from "axios";
-import { 
-  ArrowLeft, Layers, Database, Cpu, MessageSquare, Settings, Play, 
-  Trash2, Copy, Check, UploadCloud, FileText, Loader2, CheckCircle, 
-  AlertCircle, Sparkles, Sliders, Globe, ShieldAlert, Eye, Terminal, RefreshCw
-  
+import { apiClient } from "@/api/client";
+import {
+  ArrowLeft, Database, MessageSquare, Settings, Play,
+  Trash2, Copy, Check, UploadCloud, FileText, Loader2,
+  AlertCircle, Sparkles, Sliders, Globe, Eye, Terminal, RefreshCw,
+  Plus, Archive, RotateCcw, XCircle, KeyRound, Pencil, Power
 } from "lucide-react";
 import { toast } from "sonner";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8001";
-const API = `${BACKEND_URL}/api`;
+import ConversationsTab from "@/components/ConversationsTab";
 
 export default function ApplicationDetail() {
   const { id } = useParams();
@@ -18,23 +16,26 @@ export default function ApplicationDetail() {
   const [activeTab, setActiveTab] = useState("general");
   const [isLoading, setIsLoading] = useState(true);
 
-  // General state config
+  // General state
   const [documents, setDocuments] = useState([]);
+  const [knowledgeBase, setKnowledgeBase] = useState(null);
+  const [settings, setSettings] = useState(null);
   const [widgetCfg, setWidgetCfg] = useState(null);
-  const [systemPrompt, setSystemPrompt] = useState("");
-  const [modelType, setModelType] = useState("llama3:latest");
-  const [allowedDomainsStr, setAllowedDomainsStr] = useState("");
-  
+
   // Interaction sandbox testing states
   const [sandboxQuestion, setSandboxQuestion] = useState("");
   const [sandboxHistory, setSandboxHistory] = useState([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [chatTopK, setChatTopK] = useState(4);
+  const [sandboxApiKey, setSandboxApiKey] = useState(() => localStorage.getItem("oceanrag_sandbox_api_key") || "");
+  const [showSandboxKeyInput, setShowSandboxKeyInput] = useState(false);
 
   // Widget appearance configurations
   const [greetingMsg, setGreetingMsg] = useState("");
   const [themeColor, setThemeColor] = useState("#00D4FF");
-  const [launcherPosition, setLauncherPosition] = useState("bottom-right");
+  const [launcherLabel, setLauncherLabel] = useState("Chat with us");
+  const [placeholderText, setPlaceholderText] = useState("Type your message...");
+  const [isWidgetEnabled, setIsWidgetEnabled] = useState(true);
 
   // Ingestion upload states
   const [isDragging, setIsDragging] = useState(false);
@@ -47,29 +48,51 @@ export default function ApplicationDetail() {
 
   const fetchAppData = async () => {
     try {
-      const appsRes = await axios.get(`${API}/applications`);
+      // Fetch application details
+      const appsRes = await apiClient.get("/admin/applications");
       const matched = appsRes.data.find((a) => a.id === id);
       if (matched) {
         setApp(matched);
-        setSystemPrompt(matched.system_prompt);
-        setModelType(matched.model);
-        
-        // Fetch specific documents
-        const docsRes = await axios.get(`${API}/documents?app_id=${id}`);
-        setDocuments(docsRes.data);
 
-        // Fetch widget details
-        const widgetRes = await axios.get(`${API}/widget?app_id=${id}`);
-        setWidgetCfg(widgetRes.data);
-        setGreetingMsg(widgetRes.data.greeting_message);
-        setThemeColor(widgetRes.data.theme_color);
-        setLauncherPosition(widgetRes.data.launcher_position);
-        setAllowedDomainsStr(widgetRes.data.allowed_domains.join(", "));
+        // Fetch knowledge base for this application
+        try {
+          const kbRes = await apiClient.get(`/admin/knowledge-bases/by-application/${id}`);
+          setKnowledgeBase(kbRes.data);
+        } catch {
+          console.warn("No knowledge base found for this application");
+        }
+
+        // Fetch documents if knowledge base exists
+        if (knowledgeBase?.id) {
+          const docsRes = await apiClient.get(`/admin/documents?knowledge_base_id=${knowledgeBase.id}`);
+          setDocuments(docsRes.data);
+        }
+
+        // Fetch widget configuration
+        try {
+          const widgetRes = await apiClient.get(`/admin/widgets/application/${id}`);
+          setWidgetCfg(widgetRes.data);
+          setGreetingMsg(widgetRes.data.welcome_message || "");
+          setThemeColor(widgetRes.data.theme === "dark" ? "#1a1a1a" : "#00D4FF");
+          setLauncherLabel(widgetRes.data.launcher_label || "Chat with us");
+          setPlaceholderText(widgetRes.data.placeholder_text || "Type your message...");
+          setIsWidgetEnabled(widgetRes.data.is_enabled);
+        } catch {
+          console.warn("No widget found for this application");
+        }
+
+        // Fetch settings
+        try {
+          const settingsRes = await apiClient.get(`/admin/settings/by-application/${id}`);
+          setSettings(settingsRes.data);
+        } catch {
+          console.warn("No settings found for this application");
+        }
       } else {
         toast.error("Application namespace not found.");
       }
-    } catch (e) {
-      console.error(e);
+    } catch {
+      console.error("Failed to load application profile.");
       toast.error("Failed to load application profile.");
     } finally {
       setIsLoading(false);
@@ -77,16 +100,23 @@ export default function ApplicationDetail() {
   };
 
   useEffect(() => {
-    fetchAppData();
+    const loadData = async () => {
+      await fetchAppData();
+    };
+
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   // Document Auto polling for uploaded/parsing states
   useEffect(() => {
+    if (!knowledgeBase?.id) return;
+    
     const unfinished = documents.some((d) => d.status === "uploaded" || d.status === "parsing");
     if (unfinished) {
       const interval = setInterval(async () => {
         try {
-          const docsRes = await axios.get(`${API}/documents?app_id=${id}`);
+          const docsRes = await apiClient.get(`/admin/documents?knowledge_base_id=${knowledgeBase.id}`);
           setDocuments(docsRes.data);
         } catch (e) {
           console.warn("Polling documents failed", e);
@@ -94,14 +124,30 @@ export default function ApplicationDetail() {
       }, 3000);
       return () => clearInterval(interval);
     }
-  }, [documents, id]);
+  }, [documents, knowledgeBase]);
 
   const handleUpdateSettings = async (e) => {
     e.preventDefault();
     try {
-      // In a production app settings save updates the application. Let's mock local update.
+      if (settings?.id) {
+        // Update existing settings
+        await apiClient.put(`/admin/settings/by-application/${id}`, {
+          llm_temperature: settings.llm_temperature,
+          max_context_messages: settings.max_context_messages,
+          inactivity_timeout_minutes: settings.inactivity_timeout_minutes,
+          retention_days: settings.retention_days,
+          prompt_system_template: settings.prompt_system_template,
+        });
+      } else {
+        // Create new settings
+        await apiClient.post("/admin/settings", {
+          application_id: id,
+        });
+      }
       toast.success("RAG Parameters and System Prompt saved securely!");
+      fetchAppData(); // Refresh settings
     } catch (e) {
+      console.error(e);
       toast.error("Failed to save settings.");
     }
   };
@@ -109,23 +155,44 @@ export default function ApplicationDetail() {
   const handleUpdateWidget = async (e) => {
     e.preventDefault();
     try {
-      const parsedDomains = allowedDomainsStr.split(",").map((d) => d.trim()).filter(Boolean);
-      const res = await axios.post(`${API}/widget`, {
-        app_id: id,
-        greeting_message: greetingMsg,
-        theme_color: themeColor,
-        launcher_position: launcherPosition,
-        allowed_domains: parsedDomains
-      });
-      setWidgetCfg(res.data);
+      if (widgetCfg?.id) {
+        // Update existing widget
+        await apiClient.put(`/admin/widgets/${widgetCfg.id}`, {
+          display_name: widgetCfg.display_name,
+          theme: themeColor.startsWith("#") ? "light" : themeColor,
+          launcher_label: launcherLabel,
+          welcome_message: greetingMsg,
+          placeholder_text: placeholderText,
+          is_enabled: isWidgetEnabled,
+        });
+      } else {
+        // Create new widget
+        await apiClient.post("/admin/widgets", {
+          application_id: id,
+          display_name: app?.name || "Support Widget",
+          theme: themeColor.startsWith("#") ? "light" : themeColor,
+          launcher_label: launcherLabel,
+          welcome_message: greetingMsg,
+          placeholder_text: placeholderText,
+          is_enabled: isWidgetEnabled,
+        });
+        fetchAppData(); // Refresh to get the created widget
+      }
       toast.success("Widget appearance and access contracts updated!");
+      fetchAppData(); // Refresh widget config
     } catch (e) {
+      console.error(e);
       toast.error("Failed to update widget credentials.");
     }
   };
 
   // Upload Actions
   const handleUpload = async (file) => {
+    if (!knowledgeBase?.id) {
+      toast.error("No knowledge base found. Please create one first.");
+      return;
+    }
+
     const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
     const allowed = [".pdf", ".txt", ".docx", ".csv", ".json", ".md"];
     if (!allowed.includes(ext)) {
@@ -135,20 +202,22 @@ export default function ApplicationDetail() {
 
     setIsUploading(true);
     const form = new FormData();
-    //formData.append = ("file", file); // React TS/JS Form append
     form.append("file", file);
+    form.append("knowledge_base_id", knowledgeBase.id);
+    form.append("title", file.name);
 
     try {
-      await axios.post(`${API}/documents?app_id=${id}`, form, {
-        headers: { "Content-Type": "multipart/form-data" }
+      await apiClient.post("/admin/documents/upload", form, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
       toast.success(`"${file.name}" uploaded successfully! Real-time ingestion triggered.`);
       // Refresh documents
-      const docsRes = await axios.get(`${API}/documents?app_id=${id}`);
+      const docsRes = await apiClient.get(`/admin/documents?knowledge_base_id=${knowledgeBase.id}`);
       setDocuments(docsRes.data);
     } catch (e) {
       console.error(e);
-      toast.error("Ingestion failed.");
+      const msg = e.response?.data?.detail || "Ingestion failed.";
+      toast.error(msg);
     } finally {
       setIsUploading(false);
     }
@@ -157,10 +226,11 @@ export default function ApplicationDetail() {
   const handleDeleteDoc = async (docId, name) => {
     if (!window.confirm(`Are you sure you want to delete and un-index "${name}"?`)) return;
     try {
-      await axios.delete(`${API}/documents/${docId}`);
+      await apiClient.delete(`/admin/documents/${docId}`);
       toast.success(`Removed "${name}" from directory.`);
-      setDocuments((prev) => prev.filter((d) => d.document_id !== docId));
+      setDocuments((prev) => prev.filter((d) => d.id !== docId));
     } catch (e) {
+      console.error(e);
       toast.error("Un-indexing file failed.");
     }
   };
@@ -168,22 +238,75 @@ export default function ApplicationDetail() {
   const handleReindex = async () => {
     setIsRebuilding(true);
     try {
-      const res = await axios.post(`${API}/indexing/rebuild?app_id=${id}`);
-      toast.success(`FAISS Vector Index Synced! Ingested ${res.data.document_count} files into ${res.data.vector_count} dense dimensions.`);
+      await apiClient.post("/admin/ingestion/start", {
+        document_id: documents[0]?.id,
+      });
+      toast.success(`FAISS Vector Index Synced!`);
       // Refresh
-      const docsRes = await axios.get(`${API}/documents?app_id=${id}`);
-      setDocuments(docsRes.data);
+      if (knowledgeBase?.id) {
+        const docsRes = await apiClient.get(`/admin/documents?knowledge_base_id=${knowledgeBase.id}`);
+        setDocuments(docsRes.data);
+      }
     } catch (e) {
+      console.error(e);
       toast.error("Reindexing vector space failed.");
     } finally {
       setIsRebuilding(false);
     }
   };
 
+  // Create Knowledge Base
+  const handleCreateKB = async () => {
+    try {
+      const res = await apiClient.post("/admin/knowledge-bases", {
+        application_id: id,
+        name: `${app?.name || "App"} Knowledge Base`,
+      });
+      setKnowledgeBase(res.data);
+      toast.success("Knowledge base created!");
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to create knowledge base.");
+    }
+  };
+
+  // Document lifecycle actions
+  const handleDocAction = async (docId, action, extra = {}) => {
+    try {
+      await apiClient.post(`/admin/documents/${docId}/${action}`, extra);
+      toast.success(`Document marked as ${action}.`);
+      if (knowledgeBase?.id) {
+        const docsRes = await apiClient.get(`/admin/documents?knowledge_base_id=${knowledgeBase.id}`);
+        setDocuments(docsRes.data);
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error(`Failed to ${action} document.`);
+    }
+  };
+
+  // Application activate/deactivate toggle
+  const handleToggleActive = async () => {
+    try {
+      await apiClient.put(`/admin/applications/${id}`, {
+        name: app.name,
+        description: app.description,
+        client_type: app.client_type,
+        allowed_origins: app.allowed_origins,
+        is_active: !app.is_active,
+      });
+      toast.success(`Application ${app.is_active ? "deactivated" : "activated"}.`);
+      fetchAppData();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to update application status.");
+    }
+  };
+
   // Sandbox Chat testing
   const handleChatTest = async (e) => {
     e.preventDefault();
-    if (!sandboxQuestion.trim() || isChatLoading) return;
+    if (!sandboxQuestion.trim() || isChatLoading || !app) return;
 
     const userMsg = {
       role: "user",
@@ -195,22 +318,27 @@ export default function ApplicationDetail() {
     setIsChatLoading(true);
 
     try {
-      const response = await axios.post(`${API}/chat`, {
-        question: userMsg.content,
-        app_id: id,
-        top_k: chatTopK
+      const response = await apiClient.post("/client/chat/messages", {
+        conversation_identity: `sandbox-${id}`,
+        message: userMsg.content,
+        conversation_title: "Admin Sandbox Test",
+      }, {
+        headers: {
+          "X-API-Key": sandboxApiKey || "",
+        },
       });
+
       const data = response.data;
       const botMsg = {
         role: "bot",
         content: data.answer,
         timestamp: new Date().toISOString(),
-        sources: data.sources || [],
-        retrieval_backend: data.retrieval_backend,
-        model_used: data.model_used
+        sources: data.citations || [],
+        conversation_id: data.conversation_id,
       };
       setSandboxHistory((prev) => [...prev, botMsg]);
     } catch (e) {
+      console.error(e);
       toast.error("RAG chat connection failed.");
     } finally {
       setIsChatLoading(false);
@@ -218,15 +346,21 @@ export default function ApplicationDetail() {
   };
 
   // Embed Snippet
-  const embedSnippetHtml = `<!-- OceanRAG Embeddable Widget Snippet -->
+  // The widget script is served by the BACKEND (mounted at /widget) so the client
+  // website can load it from the same origin it already uses for API calls.
+  // backendUrl points to the backend for API calls (configuration + chat messages).
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+  const embedSnippetHtml = widgetCfg ? `<!-- OceanRAG Embeddable Widget Snippet -->
 <script>
+  // SECURITY: widgetKey is the only credential needed for authentication
+  // Backend resolves the application from the widget key - appId is for reference only
   window.OceanRAGWidgetConfig = {
-    apiKey: "${widgetCfg?.api_key || "sk_rag_xxxxxxxx"}",
-    appId: "${id}",
+    widgetKey: "${widgetCfg.public_key || "wk_xxxxxxxx"}",
+    appId: "${id}",  // Reference only - NOT used for security/authorization
     backendUrl: "${BACKEND_URL}"
   };
 </script>
-<script src="${BACKEND_URL}/widget/widget.js" async></script>`;
+<script src="${BACKEND_URL}/widget/widget.js" async></script>` : "";
 
   const copyToClipboard = (text, type) => {
     navigator.clipboard.writeText(text);
@@ -253,7 +387,7 @@ export default function ApplicationDetail() {
       <div className="max-w-4xl mx-auto px-4 py-12 text-center">
         <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4 animate-bounce" />
         <h2 className="text-xl font-bold text-white">Application namespace not found</h2>
-        <Link to="/chat" className="text-[#00D4FF] text-xs hover:underline mt-2 inline-block">
+        <Link to="/dashboard" className="text-[#00D4FF] text-xs hover:underline mt-2 inline-block">
           Return to directory
         </Link>
       </div>
@@ -265,8 +399,8 @@ export default function ApplicationDetail() {
       {/* Return & Header block */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div className="flex items-center gap-4">
-          <Link 
-            to="/chat" 
+          <Link
+            to="/dashboard"
             className="p-2 bg-white/5 rounded-xl border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition"
             title="Back to directory"
             data-testid="back-to-directory"
@@ -286,19 +420,6 @@ export default function ApplicationDetail() {
           </div>
         </div>
 
-        {/* Global Stats Inline */}
-        <div className="flex items-center gap-3 bg-white/2 border border-white/5 rounded-2xl p-3 text-xs text-slate-400">
-          <div className="px-3 border-r border-white/5">
-            <span className="block font-semibold text-white">{documents.length}</span>
-            <span className="text-[9px] text-slate-500">KNOWLEDGE SOURCE</span>
-          </div>
-          <div className="px-3">
-            <span className="block font-semibold text-emerald-400">
-              {documents.filter((d) => d.status === "indexed").length} / {documents.length}
-            </span>
-            <span className="text-[9px] text-slate-500">INDEXED CACHES</span>
-          </div>
-        </div>
       </div>
 
       {/* Modern High Density Pills Navigation Tabs */}
@@ -356,6 +477,19 @@ export default function ApplicationDetail() {
         </button>
 
         <button
+          onClick={() => setActiveTab("conversations")}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold tracking-wider uppercase transition-all duration-300 flex-shrink-0 ${
+            activeTab === "conversations"
+              ? "bg-[#00D4FF] text-[#040914] shadow-[0_0_12px_rgba(0,212,255,0.3)] font-bold"
+              : "text-slate-400 hover:text-white hover:bg-white/5"
+          }`}
+          data-testid="tab-conversations"
+        >
+          <MessageSquare className="h-3.5 w-3.5" />
+          <span>Conversations</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab("settings")}
           className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold tracking-wider uppercase transition-all duration-300 flex-shrink-0 ${
             activeTab === "settings"
@@ -376,21 +510,96 @@ export default function ApplicationDetail() {
           <div className="space-y-6 animate-fadeIn" data-testid="view-general">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Context Summary */}
-              <div className="md:col-span-2 glassmorphism rounded-2xl p-6 border-white/10">
-                <h3 className="font-semibold text-sm text-white mb-3">Application Summary</h3>
-                <p className="text-slate-300 text-xs leading-relaxed">
-                  {app.description || "No description provided."}
-                </p>
-                <div className="mt-6 pt-5 border-t border-white/5 grid grid-cols-2 gap-4 text-xs">
+                <div className="md:col-span-2 glassmorphism rounded-2xl p-6 border-white/10">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-sm text-white">Application Summary</h3>
+                    <div className="flex items-center gap-2.5">
+                      <Link
+                        to={`/admin/applications/${id}/edit`}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/30 text-amber-400 hover:bg-amber-500/10 transition text-xs font-semibold focus:outline-none"
+                        title="Edit Application"
+                        data-testid="edit-app-btn"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        <span>Edit</span>
+                      </Link>
+                      <button
+                        onClick={handleToggleActive}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-semibold text-xs transition focus:outline-none ${
+                          app.is_active
+                            ? "border-red-500/30 text-red-400 hover:bg-red-500/10"
+                            : "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                        }`}
+                        title={app.is_active ? "Deactivate" : "Activate"}
+                        data-testid="toggle-active-btn"
+                      >
+                        <Power className="h-3.5 w-3.5" />
+                        <span>{app.is_active ? "Deactivate" : "Activate"}</span>
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-slate-300 text-xs leading-relaxed">
+                    {app.description || "No description provided."}
+                  </p>
+
+                  {/* API Key Prefix section */}
+                  <div className="mt-5 pt-4 border-t border-white/5">
+                    <div className="flex items-center gap-2 mb-2">
+                      <KeyRound className="h-3.5 w-3.5 text-slate-500" />
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">API Key Prefix</span>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <code className="text-slate-300 font-mono text-xs break-all" data-testid="api-key-prefix-display">
+                        {app.api_key_prefix || app.api_key_prefix === "" ? app.api_key_prefix : "akp_••••••••••"}
+                      </code>
+                      <button
+                        onClick={() => copyToClipboard(app.api_key_prefix || "akp_••••••••••")}
+                        className="text-slate-400 hover:text-white transition p-1 rounded hover:bg-white/5"
+                        title="Copy API key prefix"
+                        data-testid="copy-key-prefix-btn"
+                      >
+                        {copiedKey ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1.5">
+                      The full API key was shown only at creation time. This is a read-only reference prefix.
+                    </p>
+                  </div>
+
+                  <div className="mt-6 pt-5 border-t border-white/5 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                   <div>
-                    <span className="block text-slate-500 font-medium text-[10px] uppercase">Registered Creation</span>
+                    <span className="block text-slate-500 font-medium text-[10px] uppercase">Slug</span>
+                    <span className="block text-slate-300 font-mono mt-0.5">{app.slug}</span>
+                  </div>
+                  <div>
+                    <span className="block text-slate-500 font-medium text-[10px] uppercase">Client Type</span>
+                    <span className="block text-[#00D4FF] font-mono mt-0.5 capitalize">{app.client_type}</span>
+                  </div>
+                  <div>
+                    <span className="block text-slate-500 font-medium text-[10px] uppercase">Status</span>
+                    <span className={`block font-mono mt-0.5 ${app.is_active ? "text-emerald-400" : "text-red-400"}`}>
+                      {app.is_active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="block text-slate-500 font-medium text-[10px] uppercase">Created</span>
                     <span className="block text-slate-300 font-mono mt-0.5">
                       {new Date(app.created_at).toLocaleDateString()}
                     </span>
                   </div>
                   <div>
-                    <span className="block text-slate-500 font-medium text-[10px] uppercase">Active LLM Core</span>
-                    <span className="block text-[#00D4FF] font-mono mt-0.5">{modelType}</span>
+                    <span className="block text-slate-500 font-medium text-[10px] uppercase">Updated</span>
+                    <span className="block text-slate-300 font-mono mt-0.5">
+                      {new Date(app.updated_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div className="md:col-span-3">
+                    <span className="block text-slate-500 font-medium text-[10px] uppercase">Allowed Origins</span>
+                    <span className="block text-slate-300 font-mono mt-0.5 break-all">
+                      {(app.allowed_origins || []).length > 0
+                        ? app.allowed_origins.join(", ")
+                        : "All origins allowed"}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -419,189 +628,198 @@ export default function ApplicationDetail() {
                 </div>
               </div>
             </div>
-
-            {/* Quick Walkthrough Widget */}
-            <div className="p-6 bg-gradient-to-r from-blue-500/5 to-[#00D4FF]/5 border border-white/10 rounded-2xl flex flex-col md:flex-row gap-5 items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-[#0B1221] rounded-2xl border border-white/10">
-                  <Sparkles className="h-5 w-5 text-[#00D4FF]" />
-                </div>
-                <div>
-                  <h4 className="font-semibold text-sm text-white">Embeddable Widget Integration</h4>
-                  <p className="text-slate-400 text-xs mt-0.5 max-w-xl">
-                    Configure the UI styling and greeting prompt in **Widget Config**, copy the iframe script block, and deploy to any webpage.
-                  </p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setActiveTab("widget")}
-                className="px-5 py-2 rounded-xl bg-white/5 hover:bg-[#00D4FF] text-white hover:text-[#040914] transition duration-300 font-semibold text-xs flex items-center gap-2 border border-white/10 hover:border-[#00D4FF] flex-shrink-0"
-              >
-                <span>Setup Widget</span>
-                <Play className="h-3 w-3" />
-              </button>
-            </div>
           </div>
         )}
 
         {/* TABS 2: KNOWLEDGE BASE */}
         {activeTab === "kb" && (
           <div className="space-y-6 animate-fadeIn" data-testid="view-kb">
-            {/* Controls */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <h3 className="font-semibold text-base text-white">Document Source Registry</h3>
-                <p className="text-slate-400 text-xs mt-0.5">
-                  Manage PDF configuration templates, manual text rules, and FAQs.
-                </p>
-              </div>
-
-              <button
-                onClick={handleReindex}
-                disabled={isRebuilding || documents.length === 0}
-                className={`flex items-center gap-2 px-5 py-3 rounded-xl font-semibold text-xs tracking-wider uppercase transition ${
-                  isRebuilding || documents.length === 0
-                    ? "bg-white/5 border border-white/5 text-slate-500 cursor-not-allowed"
-                    : "bg-gradient-to-r from-[#00D4FF] to-[#2563EB] text-[#040914] hover:scale-103 active:scale-97 shadow-[0_0_15px_rgba(0,212,255,0.2)]"
-                }`}
-                data-testid="reindex-btn"
-              >
-                {isRebuilding ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Syncing FAISS database...</span>
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    <span>Rebuild Vector Space</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Ingestion Matrix Layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-              {/* Drag and Drop Zone */}
-              <div className="lg:col-span-1">
-                <div 
-                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                  onDragLeave={() => setIsDragging(false)}
-                  onDrop={(e) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files[0]); }}
-                  onClick={() => document.getElementById("doc-uploader-picker").click()}
-                  className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition duration-300 h-64 ${
-                    isDragging
-                      ? "border-[#00D4FF] bg-[#00D4FF]/5 scale-102"
-                      : "border-white/10 hover:border-white/20 hover:bg-white/5 bg-[#0B1221]/30"
-                  }`}
-                  data-testid="file-upload-zone"
+            {!knowledgeBase ? (
+              <div className="text-center py-16 border border-dashed border-white/5 rounded-2xl">
+                <Database className="h-10 w-10 text-slate-600 mx-auto mb-3" />
+                <p className="text-slate-400 text-xs mb-4">No knowledge base found for this application.</p>
+                <button
+                  onClick={handleCreateKB}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#00D4FF] text-[#040914] font-bold text-xs tracking-wider uppercase hover:scale-[1.02] active:scale-[0.98] transition shadow-md cursor-pointer"
+                  data-testid="create-kb-btn"
                 >
-                  <input 
-                    id="doc-uploader-picker"
-                    type="file"
-                    className="hidden"
-                    onChange={(e) => { if (e.target.files.length) handleUpload(e.target.files[0]); }}
-                    accept=".pdf,.txt,.docx,.csv,.json,.md"
-                    data-testid="file-upload-input"
-                  />
-                  {isUploading ? (
-                    <div className="space-y-3">
-                      <Loader2 className="h-10 w-10 text-[#00D4FF] animate-spin mx-auto" />
-                      <p className="text-xs text-slate-300 font-mono animate-pulse">INGESTING BYTES...</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <div className="p-3.5 bg-white/5 rounded-full border border-white/10 inline-block">
-                        <UploadCloud className="h-6 w-6 text-[#00D4FF]" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-200 font-semibold">Upload Documentation</p>
-                        <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
-                          Drag & Drop or browse files.<br />
-                          PDF, TXT, DOCX, CSV, MD or JSON.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Create Knowledge Base</span>
+                </button>
               </div>
-
-              {/* Table List (Right columns) */}
-              <div className="lg:col-span-2 glassmorphism rounded-2xl p-6 border-white/10">
-                {documents.length === 0 ? (
-                  <div className="text-center py-16">
-                    <FileText className="h-10 w-10 text-slate-600 mx-auto mb-3" />
-                    <p className="text-slate-400 text-xs font-medium">No documents uploaded to this application yet</p>
-                    <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
-                      Supply knowledge-base documents using the drag & drop area to enable localized vector searches.
+            ) : (
+              <>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-semibold text-base text-white">Document Source Registry</h3>
+                    <p className="text-slate-400 text-xs mt-0.5">
+                      Manage PDF configuration templates, manual text rules, and FAQs.
                     </p>
                   </div>
-                ) : (
-                  <div className="overflow-x-auto" data-testid="document-table">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="border-b border-white/10 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
-                          <th className="py-3 px-4">Filename</th>
-                          <th className="py-3 px-4">Size</th>
-                          <th className="py-3 px-4">Status</th>
-                          <th className="py-3 px-4 text-right">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {documents.map((doc) => (
-                          <tr 
-                            key={doc.document_id}
-                            className="border-b border-white/5 hover:bg-white/2.5 transition duration-200"
-                            data-testid={`document-row-${doc.document_id}`}
-                          >
-                            <td className="py-3 px-4 font-semibold text-slate-200 flex items-center gap-2.5 max-w-[200px] md:max-w-[280px]">
-                              <FileText className="h-4 w-4 text-[#00D4FF] flex-shrink-0" />
-                              <span className="truncate" title={doc.original_filename}>{doc.original_filename}</span>
-                            </td>
-                            <td className="py-3 px-4 text-slate-400 font-mono">
-                              {doc.file_size_kb || "N/A"} KB
-                            </td>
-                            <td className="py-3 px-4" data-testid={`document-status-${doc.document_id}`}>
-                              {doc.status === "indexed" && (
-                                <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full text-[10px] font-medium font-mono uppercase">
-                                  indexed
-                                </span>
-                              )}
-                              {doc.status === "parsing" && (
-                                <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full text-[10px] font-medium font-mono uppercase inline-flex items-center gap-1">
-                                  <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                  parsing
-                                </span>
-                              )}
-                              {doc.status === "uploaded" && (
-                                <span className="bg-blue-500/10 border border-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full text-[10px] font-medium font-mono uppercase inline-flex items-center gap-1">
-                                  <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                  uploaded
-                                </span>
-                              )}
-                              {doc.status === "failed" && (
-                                <span className="bg-red-500/10 border border-red-500/20 text-red-400 px-2 py-0.5 rounded-full text-[10px] font-medium font-mono uppercase" title={doc.error_message}>
-                                  failed
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-3 px-4 text-right">
-                              <button
-                                onClick={() => handleDeleteDoc(doc.document_id, doc.original_filename)}
-                                className="p-1.5 border border-red-500/10 hover:border-red-500/30 rounded-lg hover:bg-red-500/10 text-red-400 hover:text-red-300 transition focus:outline-none"
-                                data-testid={`delete-btn-${doc.document_id}`}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+
+                  <button
+                    onClick={handleReindex}
+                    disabled={isRebuilding || documents.length === 0}
+                    className={`flex items-center gap-2 px-5 py-3 rounded-xl font-semibold text-xs tracking-wider uppercase transition ${
+                      isRebuilding || documents.length === 0
+                        ? "bg-white/5 border border-white/5 text-slate-500 cursor-not-allowed"
+                        : "bg-gradient-to-r from-[#00D4FF] to-[#2563EB] text-[#040914] hover:scale-103 active:scale-97 shadow-[0_0_15px_rgba(0,212,255,0.2)]"
+                    }`}
+                    data-testid="reindex-btn"
+                  >
+                    {isRebuilding ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Syncing FAISS database...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        <span>Rebuild Vector Space</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Ingestion Matrix Layout */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                  {/* Drag and Drop Zone */}
+                  <div className="lg:col-span-1">
+                    <div
+                      onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                      onDragLeave={() => setIsDragging(false)}
+                      onDrop={(e) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files[0]); }}
+                      onClick={() => document.getElementById("doc-uploader-picker").click()}
+                      className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition duration-300 h-64 ${
+                        isDragging
+                          ? "border-[#00D4FF] bg-[#00D4FF]/5 scale-102"
+                          : "border-white/10 hover:border-white/20 hover:bg-white/5 bg-[#0B1221]/30"
+                      }`}
+                      data-testid="file-upload-zone"
+                    >
+                      <input
+                        id="doc-uploader-picker"
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => { if (e.target.files.length) handleUpload(e.target.files[0]); }}
+                        accept=".pdf,.txt,.docx,.csv,.json,.md"
+                        data-testid="file-upload-input"
+                      />
+                      {isUploading ? (
+                        <div className="space-y-3">
+                          <Loader2 className="h-10 w-10 text-[#00D4FF] animate-spin mx-auto" />
+                          <p className="text-xs text-slate-300 font-mono animate-pulse">INGESTING BYTES...</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="p-3.5 bg-white/5 rounded-full border border-white/10 inline-block">
+                            <UploadCloud className="h-6 w-6 text-[#00D4FF]" />
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-200 font-semibold">Upload Documentation</p>
+                            <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                              Drag & Drop or browse files.<br />
+                              PDF, TXT, DOCX, CSV, MD or JSON.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
-            </div>
+
+                  {/* Table List (Right columns) */}
+                  <div className="lg:col-span-2 glassmorphism rounded-2xl p-6 border-white/10">
+                    {documents.length === 0 ? (
+                      <div className="text-center py-16">
+                        <FileText className="h-10 w-10 text-slate-600 mx-auto mb-3" />
+                        <p className="text-slate-400 text-xs font-medium">No documents uploaded to this application yet</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto" data-testid="document-table">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="border-b border-white/10 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
+                              <th className="py-3 px-4">Filename</th>
+                              <th className="py-3 px-4">Size</th>
+                              <th className="py-3 px-4">Status</th>
+                              <th className="py-3 px-4 text-right">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {documents.map((doc) => (
+                              <tr
+                                key={doc.id}
+                                className="border-b border-white/5 hover:bg-white/2.5 transition duration-200"
+                                data-testid={`document-row-${doc.id}`}
+                              >
+                                <td className="py-3 px-4 font-semibold text-slate-200 flex items-center gap-2.5 max-w-[200px] md:max-w-[280px]">
+                                  <FileText className="h-4 w-4 text-[#00D4FF] flex-shrink-0" />
+                                  <span className="truncate" title={doc.original_filename || doc.title}>{doc.original_filename || doc.title}</span>
+                                </td>
+                                <td className="py-3 px-4 text-slate-400 font-mono">
+                                  {doc.file_size_kb || "N/A"} KB
+                                </td>
+                                <td className="py-3 px-4" data-testid={`document-status-${doc.id}`}>
+                                  {doc.status === "indexed" && (
+                                    <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full text-[10px] font-medium font-mono uppercase">
+                                      indexed
+                                    </span>
+                                  )}
+                                  {doc.status === "parsing" && (
+                                    <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full text-[10px] font-medium font-mono uppercase inline-flex items-center gap-1">
+                                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                      parsing
+                                    </span>
+                                  )}
+                                  {doc.status === "uploaded" && (
+                                    <span className="bg-blue-500/10 border border-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full text-[10px] font-medium font-mono uppercase inline-flex items-center gap-1">
+                                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                      uploaded
+                                    </span>
+                                  )}
+                                  {doc.status === "failed" && (
+                                    <span className="bg-red-500/10 border border-red-500/20 text-red-400 px-2 py-0.5 rounded-full text-[10px] font-medium font-mono uppercase" title={doc.error_message}>
+                                      failed
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    {doc.status === "failed" && (
+                                      <button onClick={() => handleDocAction(doc.id, "processing")} className="p-1.5 border border-amber-500/10 hover:border-amber-500/30 rounded-lg hover:bg-amber-500/10 text-amber-400 hover:text-amber-300 transition focus:outline-none" title="Re-process" data-testid={`reprocess-btn-${doc.id}`}>
+                                        <RotateCcw className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                    {doc.status === "uploaded" && (
+                                      <button onClick={() => handleDocAction(doc.id, "ready")} className="p-1.5 border border-emerald-500/10 hover:border-emerald-500/30 rounded-lg hover:bg-emerald-500/10 text-emerald-400 hover:text-emerald-300 transition focus:outline-none" title="Mark ready" data-testid={`ready-btn-${doc.id}`}>
+                                        <Check className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                    {doc.status === "uploaded" && (
+                                      <button onClick={() => handleDocAction(doc.id, "failed", { failure_reason: "Manually marked failed by admin" })} className="p-1.5 border border-red-500/10 hover:border-red-500/30 rounded-lg hover:bg-red-500/10 text-red-400 hover:text-red-300 transition focus:outline-none" title="Mark failed" data-testid={`fail-btn-${doc.id}`}>
+                                        <XCircle className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                    {doc.status !== "archived" && (
+                                      <button onClick={() => handleDocAction(doc.id, "archive")} className="p-1.5 border border-slate-500/10 hover:border-slate-500/30 rounded-lg hover:bg-slate-500/10 text-slate-400 hover:text-slate-300 transition focus:outline-none" title="Archive" data-testid={`archive-btn-${doc.id}`}>
+                                        <Archive className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                    <button onClick={() => handleDeleteDoc(doc.id, doc.original_filename || doc.title)} className="p-1.5 border border-red-500/10 hover:border-red-500/30 rounded-lg hover:bg-red-500/10 text-red-400 hover:text-red-300 transition focus:outline-none" title="Delete" data-testid={`delete-btn-${doc.id}`}>
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -620,7 +838,7 @@ export default function ApplicationDetail() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Greeting Prompt</label>
-                      <input 
+                      <input
                         type="text"
                         value={greetingMsg}
                         onChange={(e) => setGreetingMsg(e.target.value)}
@@ -630,48 +848,52 @@ export default function ApplicationDetail() {
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Theme Color Glow</label>
-                      <div className="flex gap-2">
-                        <input 
-                          type="color"
-                          value={themeColor}
-                          onChange={(e) => setThemeColor(e.target.value)}
-                          className="bg-[#0B1221] border border-white/10 rounded-xl h-9 w-12 cursor-pointer focus:ring-1 focus:ring-[#00D4FF] outline-none"
-                          data-testid="widget-theme-color"
-                        />
-                        <input 
-                          type="text"
-                          value={themeColor}
-                          onChange={(e) => setThemeColor(e.target.value)}
-                          className="flex-1 bg-[#0B1221] border border-white/10 focus:border-[#00D4FF] text-white text-xs rounded-xl px-4 py-2.5 outline-none font-mono focus:ring-1 focus:ring-[#00D4FF] transition"
-                        />
-                      </div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Theme</label>
+                      <select
+                        value={themeColor.startsWith("#") ? "light" : themeColor}
+                        onChange={(e) => setThemeColor(e.target.value)}
+                        className="w-full bg-[#0B1221] border border-white/10 focus:border-[#00D4FF] text-white text-xs rounded-xl px-4 py-2.5 outline-none focus:ring-1 focus:ring-[#00D4FF] transition"
+                      >
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                      </select>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Launcher Position</label>
-                      <select
-                        value={launcherPosition}
-                        onChange={(e) => setLauncherPosition(e.target.value)}
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Launcher Label</label>
+                      <input
+                        type="text"
+                        value={launcherLabel}
+                        onChange={(e) => setLauncherLabel(e.target.value)}
                         className="w-full bg-[#0B1221] border border-white/10 focus:border-[#00D4FF] text-white text-xs rounded-xl px-4 py-2.5 outline-none focus:ring-1 focus:ring-[#00D4FF] transition"
-                      >
-                        <option value="bottom-right">Bottom Right</option>
-                        <option value="bottom-left">Bottom Left</option>
-                      </select>
+                        data-testid="widget-launcher-label"
+                      />
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Allowed Access Domains</label>
-                      <input 
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Placeholder Text</label>
+                      <input
                         type="text"
-                        value={allowedDomainsStr}
-                        onChange={(e) => setAllowedDomainsStr(e.target.value)}
-                        placeholder="localhost, example.com"
+                        value={placeholderText}
+                        onChange={(e) => setPlaceholderText(e.target.value)}
                         className="w-full bg-[#0B1221] border border-white/10 focus:border-[#00D4FF] text-white text-xs rounded-xl px-4 py-2.5 outline-none focus:ring-1 focus:ring-[#00D4FF] transition"
                       />
                     </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="widget-enabled"
+                      checked={isWidgetEnabled}
+                      onChange={(e) => setIsWidgetEnabled(e.target.checked)}
+                      className="h-4 w-4 rounded border-white/10 bg-[#0B1221] text-[#00D4FF] focus:ring-[#00D4FF]"
+                    />
+                    <label htmlFor="widget-enabled" className="text-xs text-slate-300">
+                      Widget is enabled and visible
+                    </label>
                   </div>
 
                   <div className="pt-4 border-t border-white/5 flex items-center justify-end">
@@ -693,13 +915,13 @@ export default function ApplicationDetail() {
                   </h3>
 
                   <div className="space-y-1">
-                    <span className="block text-[10px] text-slate-400 uppercase font-bold">Generated API Contract Key</span>
+                    <span className="block text-[10px] text-slate-400 uppercase font-bold">Generated Widget Public Key</span>
                     <div className="flex items-center gap-3 bg-[#0B1221] border border-white/10 rounded-xl p-3">
                       <code className="text-slate-300 font-mono text-xs select-all flex-1" data-testid="widget-api-key">
-                        {widgetCfg?.api_key || "sk_rag_xxxxxxxxxxxxxxxx"}
+                        {widgetCfg?.public_key || "wk_xxxxxxxxxxxxxxxx"}
                       </code>
                       <button
-                        onClick={() => copyToClipboard(widgetCfg?.api_key, "key")}
+                        onClick={() => copyToClipboard(widgetCfg?.public_key, "key")}
                         className="text-slate-400 hover:text-white transition p-1 hover:bg-white/5 rounded"
                       >
                         {copiedKey ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
@@ -710,7 +932,7 @@ export default function ApplicationDetail() {
                   <div className="space-y-1">
                     <span className="block text-[10px] text-slate-400 uppercase font-bold">Copy Embedding script tag</span>
                     <div className="relative">
-                      <pre 
+                      <pre
                         className="bg-[#0B1221] border border-white/10 rounded-xl p-4 text-[11px] text-slate-300 font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed select-all"
                         data-testid="widget-snippet"
                       >
@@ -737,7 +959,7 @@ export default function ApplicationDetail() {
 
                 <div className="border border-white/10 rounded-2xl overflow-hidden bg-[#040914] shadow-inner h-96 relative flex flex-col">
                   {/* Fake widget top bar */}
-                  <div 
+                  <div
                     className="p-3 text-xs text-[#040914] font-bold flex items-center justify-between"
                     style={{ backgroundColor: themeColor }}
                   >
@@ -758,9 +980,9 @@ export default function ApplicationDetail() {
                   {/* Fake input form */}
                   <div className="p-3 border-t border-white/10 flex items-center gap-2 bg-[#0B1221]">
                     <div className="flex-1 bg-white/5 rounded-lg px-2.5 py-1.5 text-[9px] text-slate-500">
-                      Type message...
+                      {placeholderText}
                     </div>
-                    <div 
+                    <div
                       className="h-6 w-12 rounded-lg flex items-center justify-center text-[9px] font-bold text-center"
                       style={{ backgroundColor: themeColor, color: "#040914" }}
                     >
@@ -769,14 +991,9 @@ export default function ApplicationDetail() {
                   </div>
 
                   {/* Widget Launch Circle */}
-                  <div 
-                    className={`absolute bottom-16 right-4 h-11 w-11 rounded-full flex items-center justify-center text-lg shadow-xl border border-white/10`}
-                    style={{ 
-                      backgroundColor: themeColor, 
-                      color: "#040914",
-                      right: launcherPosition === "bottom-right" ? "16px" : "auto",
-                      left: launcherPosition === "bottom-left" ? "16px" : "auto"
-                    }}
+                  <div
+                    className={`absolute bottom-4 right-4 h-11 w-11 rounded-full flex items-center justify-center text-lg shadow-xl border border-white/10`}
+                    style={{ backgroundColor: themeColor, color: "#040914" }}
                   >
                     💬
                   </div>
@@ -795,10 +1012,40 @@ export default function ApplicationDetail() {
                 <Terminal className="h-4 w-4 text-[#00D4FF]" />
                 <span className="font-semibold text-slate-200">Sandbox Testing Layer</span>
                 <span className="text-slate-500">•</span>
-                <span className="text-slate-400">Target contract: `POST /api/chat`</span>
+                <span className="text-slate-400">Target contract: `POST /api/client/chat/messages`</span>
               </div>
 
               <div className="flex items-center gap-4">
+                {/* API Key input for sandbox */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setShowSandboxKeyInput(!showSandboxKeyInput)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition ${
+                      sandboxApiKey
+                        ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                        : "border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                    }`}
+                    title={sandboxApiKey ? "API key configured" : "Set API key (akp_...)"}
+                    data-testid="sandbox-api-key-toggle"
+                  >
+                    <KeyRound className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline font-medium">{sandboxApiKey ? "Key Set" : "Set API Key"}</span>
+                  </button>
+                  {showSandboxKeyInput && (
+                    <input
+                      type="text"
+                      value={sandboxApiKey}
+                      onChange={(e) => {
+                        setSandboxApiKey(e.target.value);
+                        localStorage.setItem("oceanrag_sandbox_api_key", e.target.value);
+                      }}
+                      placeholder="akp_..."
+                      className="w-40 bg-slate-900 border border-white/10 rounded-md py-1 px-2 text-white font-mono text-[10px] focus:ring-1 focus:ring-[#00D4FF] focus:outline-none"
+                      data-testid="sandbox-api-key-input"
+                    />
+                  )}
+                </div>
+
                 <div className="flex items-center gap-1.5 text-xs text-slate-400">
                   <span>Retrieve top_k chunks:</span>
                   <select
@@ -846,7 +1093,7 @@ export default function ApplicationDetail() {
                       </div>
 
                       <div className="flex gap-2 max-w-[85%]">
-                        <div 
+                        <div
                           className={`rounded-2xl px-4 py-3 text-xs leading-relaxed ${
                             m.role === "user"
                               ? "bg-[#2563EB] text-white rounded-tr-none border border-white/5"
@@ -864,10 +1111,11 @@ export default function ApplicationDetail() {
                           {m.sources.map((s, sIdx) => (
                             <div key={sIdx} className="bg-[#040914]/80 border border-white/5 rounded-xl p-2.5 text-[10px] text-slate-400">
                               <div className="flex justify-between items-center mb-1 text-[9px] text-slate-500 font-semibold font-mono border-b border-white/5 pb-1">
-                                <span>{s.source_file}</span>
-                                <span className="text-[#00D4FF]">Score: {(s.score*100).toFixed(0)}%</span>
+                                <span>{s.document_id}</span>
+                                <span className="text-[#00D4FF]">Chunk: {s.chunk_id}</span>
                               </div>
-                              <p className="italic font-mono text-[9px] text-slate-300">&ldquo;{s.text}&rdquo;</p>                            </div>
+                              <p className="italic font-mono text-[9px] text-slate-300">{s.title}</p>
+                            </div>
                           ))}
                         </div>
                       )}
@@ -891,7 +1139,7 @@ export default function ApplicationDetail() {
               </div>
 
               {/* Sandbox Input Form */}
-              <form 
+              <form
                 onSubmit={handleChatTest}
                 className="p-3 border-t border-white/10 bg-[#0B1221] flex items-center gap-3"
               >
@@ -922,7 +1170,12 @@ export default function ApplicationDetail() {
           </div>
         )}
 
-        {/* TABS 5: SETTINGS */}
+        {/* TABS 5: CONVERSATIONS */}
+        {activeTab === "conversations" && (
+          <ConversationsTab applicationId={id} />
+        )}
+
+        {/* TABS 6: SETTINGS */}
         {activeTab === "settings" && (
           <form onSubmit={handleUpdateSettings} className="glassmorphism rounded-2xl p-6 border-white/10 space-y-6 animate-fadeIn" data-testid="view-settings">
             <h3 className="font-semibold text-sm text-white mb-2 flex items-center gap-2">
@@ -930,27 +1183,57 @@ export default function ApplicationDetail() {
               <span>RAG Settings & Parameter Core</span>
             </h3>
 
+            {!settings && (
+              <div className="text-center py-8 text-slate-400 text-xs">
+                No settings configured yet. Create settings by submitting this form.
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Embedding Model selection</label>
-                <select
-                  value={modelType}
-                  onChange={(e) => setModelType(e.target.value)}
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">LLM Temperature</label>
+                <input
+                  type="text"
+                  value={settings?.llm_temperature || "0.2"}
+                  onChange={(e) => setSettings({ ...settings, llm_temperature: e.target.value })}
                   className="w-full bg-[#0B1221] border border-white/10 focus:border-[#00D4FF] text-white text-xs rounded-xl px-4 py-2.5 outline-none focus:ring-1 focus:ring-[#00D4FF] transition"
-                >
-                  <option value="llama3:latest">llama3:latest (Default 8B Parameters)</option>
-                  <option value="mistral:latest">mistral:latest (7B Parameters)</option>
-                  <option value="phi3:latest">phi3:latest (High Density Mini)</option>
-                </select>
+                  data-testid="settings-temperature"
+                />
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Ollama Model Environment Endpoint</label>
-                <input 
-                  type="text"
-                  value="http://localhost:11434"
-                  disabled
-                  className="w-full bg-[#0B1221]/30 border border-white/5 text-slate-500 text-xs rounded-xl px-4 py-2.5 outline-none font-mono cursor-not-allowed"
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Max Context Messages</label>
+                <input
+                  type="number"
+                  value={settings?.max_context_messages || 12}
+                  onChange={(e) => setSettings({ ...settings, max_context_messages: parseInt(e.target.value) })}
+                  min="1"
+                  max="100"
+                  className="w-full bg-[#0B1221] border border-white/10 focus:border-[#00D4FF] text-white text-xs rounded-xl px-4 py-2.5 outline-none focus:ring-1 focus:ring-[#00D4FF] transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Inactivity Timeout (minutes)</label>
+                <input
+                  type="number"
+                  value={settings?.inactivity_timeout_minutes || 30}
+                  onChange={(e) => setSettings({ ...settings, inactivity_timeout_minutes: parseInt(e.target.value) })}
+                  min="1"
+                  max="10080"
+                  className="w-full bg-[#0B1221] border border-white/10 focus:border-[#00D4FF] text-white text-xs rounded-xl px-4 py-2.5 outline-none focus:ring-1 focus:ring-[#00D4FF] transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Retention Days</label>
+                <input
+                  type="number"
+                  value={settings?.retention_days || 30}
+                  onChange={(e) => setSettings({ ...settings, retention_days: parseInt(e.target.value) })}
+                  min="1"
+                  max="3650"
+                  className="w-full bg-[#0B1221] border border-white/10 focus:border-[#00D4FF] text-white text-xs rounded-xl px-4 py-2.5 outline-none focus:ring-1 focus:ring-[#00D4FF] transition"
                 />
               </div>
             </div>
@@ -958,12 +1241,11 @@ export default function ApplicationDetail() {
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">System Grounding Prompt Instructions</label>
               <textarea
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
+                value={settings?.prompt_system_template || ""}
+                onChange={(e) => setSettings({ ...settings, prompt_system_template: e.target.value })}
                 rows={5}
                 className="w-full bg-[#0B1221] border border-white/10 focus:border-[#00D4FF] text-white text-xs rounded-xl px-4 py-2.5 outline-none focus:ring-1 focus:ring-[#00D4FF] transition resize-none font-mono leading-relaxed"
                 data-testid="settings-system-prompt"
-                required
               />
             </div>
 

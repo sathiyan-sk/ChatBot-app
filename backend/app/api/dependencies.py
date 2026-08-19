@@ -4,24 +4,20 @@ import os
 import secrets
 from collections.abc import Generator
 
-from fastapi import (
-    Depends,
-    HTTPException,
-    Request,
-    status,
-)
-from fastapi.security import (
-    HTTPBasic,
-    HTTPBasicCredentials,
-)
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.orm import Session
 
 from app.config.settings import Settings
 from app.infrastructure.providers.embeddings.nomic_provider import (
     NomicEmbeddingsProvider,
 )
-from app.infrastructure.providers.llm.ollama_provider import (
-    OllamaLlmProvider,
+from app.infrastructure.providers.embeddings.openrouter_embeddings_provider import (
+    OpenRouterEmbeddingsProvider,
+)
+from app.infrastructure.providers.llm.ollama_provider import OllamaLlmProvider
+from app.infrastructure.providers.llm.openrouter_provider import (
+    OpenRouterLlmProvider,
 )
 from app.infrastructure.providers.parsing.docling_provider import (
     DoclingParsingProvider,
@@ -29,47 +25,32 @@ from app.infrastructure.providers.parsing.docling_provider import (
 from app.infrastructure.providers.parsing.html_parsing_provider import (
     HtmlParsingProvider,
 )
-from app.infrastructure.providers.parsing.ocr_provider import (
-    OcrParsingProvider,
+from app.infrastructure.providers.parsing.ocr_provider import OcrParsingProvider
+from app.infrastructure.providers.parsing.pymupdf_provider import (
+    PyMuPDFParsingProvider,
 )
 from app.infrastructure.providers.storage.supabase_storage_provider import (
     SupabaseStorageProvider,
 )
-from app.infrastructure.providers.vector.pgvector_provider import (
-    PgVectorProvider,
-)
-
-from app.knowledge_engine.generation.citation_builder import (
-    CitationBuilder,
-)
-from app.knowledge_engine.generation.prompt_builder import (
-    PromptBuilder,
-)
-from app.knowledge_engine.generation.response_formatter import (
-    ResponseFormatter,
-)
-from app.knowledge_engine.generation.response_generator import (
-    ResponseGenerator,
-)
-
-from app.knowledge_engine.ingestion.chunker import (
-    IntelligentChunkGenerator,
-)
-from app.knowledge_engine.ingestion.embedding_generator import (
-    EmbeddingGenerator,
-)
-from app.knowledge_engine.ingestion.metadata_enricher import (
-    MetadataEnricher,
-)
-from app.knowledge_engine.ingestion.normalizer import (
-    DocumentNormalizer,
-)
+from app.infrastructure.providers.vector.pgvector_provider import PgVectorProvider
+from app.knowledge_engine.generation.citation_builder import CitationBuilder
+from app.knowledge_engine.generation.prompt_builder import PromptBuilder
+from app.knowledge_engine.generation.response_formatter import ResponseFormatter
+from app.knowledge_engine.generation.response_generator import ResponseGenerator
+from app.knowledge_engine.ingestion.chunker import IntelligentChunkGenerator
+from app.knowledge_engine.ingestion.embedding_generator import EmbeddingGenerator
+from app.knowledge_engine.ingestion.metadata_enricher import MetadataEnricher
+from app.knowledge_engine.ingestion.normalizer import DocumentNormalizer
 from app.knowledge_engine.ingestion.parsers.html_parser import HtmlDocumentParser
 from app.knowledge_engine.ingestion.parsers.ocr_parser import OcrDocumentParser
-from app.knowledge_engine.ingestion.parsers.structured_document_parser import StructuredDocumentParser
+from app.knowledge_engine.ingestion.parsers.structured_document_parser import (
+    StructuredDocumentParser,
+)
 from app.knowledge_engine.ingestion.source_loaders.csv_loader import CsvSourceLoader
 from app.knowledge_engine.ingestion.source_loaders.file_loader import FileSourceLoader
-from app.knowledge_engine.ingestion.source_loaders.website_loader import WebsiteSourceLoader
+from app.knowledge_engine.ingestion.source_loaders.website_loader import (
+    WebsiteSourceLoader,
+)
 from app.knowledge_engine.ingestion.vector_indexer import VectorIndexer
 from app.knowledge_engine.pipelines.knowledge_ingestion_pipeline import (
     KnowledgeIngestionPipeline,
@@ -80,18 +61,10 @@ from app.knowledge_engine.pipelines.question_answering_pipeline import (
 from app.knowledge_engine.retrieval.conversation_context_builder import (
     ConversationContextBuilder,
 )
-from app.knowledge_engine.retrieval.hybrid_retriever import (
-    HybridRetriever,
-)
-from app.knowledge_engine.retrieval.metadata_filter import (
-    MetadataFilter,
-)
-from app.knowledge_engine.retrieval.query_embedder import (
-    QueryEmbedder,
-)
+from app.knowledge_engine.retrieval.hybrid_retriever import HybridRetriever
+from app.knowledge_engine.retrieval.metadata_filter import MetadataFilter
+from app.knowledge_engine.retrieval.query_embedder import QueryEmbedder
 from app.knowledge_engine.retrieval.reranker import Reranker
-
-from app.modules.question_answering.application.services import ChatApplicationService
 from app.modules.conversations.application.services import (
     ConversationApplicationService,
 )
@@ -99,9 +72,7 @@ from app.modules.conversations.infrastructure.repositories import (
     SqlAlchemyConversationRepository,
     SqlAlchemyMessageRepository,
 )
-from app.modules.documents.application.services import (
-    DocumentApplicationService,
-)
+from app.modules.documents.application.services import DocumentApplicationService
 from app.modules.documents.infrastructure.repositories import (
     SqlAlchemyDocumentRepository,
 )
@@ -111,22 +82,17 @@ from app.modules.knowledge_bases.application.services import (
 from app.modules.knowledge_bases.infrastructure.repositories import (
     SqlAlchemyKnowledgeBaseRepository,
 )
-from app.modules.settings.application.services import (
-    SettingsApplicationService,
+from app.modules.question_answering.application.services import (
+    ChatApplicationService,
 )
+from app.modules.settings.application.services import SettingsApplicationService
 from app.modules.settings.infrastructure.repositories import (
     SqlAlchemySettingsRepository,
 )
-from app.modules.widgets.application.services import (
-    WidgetApplicationService,
-)
+from app.modules.widgets.application.services import WidgetApplicationService
 from app.modules.widgets.infrastructure.repositories import (
     SqlAlchemyWidgetRepository,
 )
-from app.infrastructure.providers.parsing.pymupdf_provider import (
-    PyMuPDFParsingProvider,
-)
-
 
 admin_security = HTTPBasic()
 
@@ -284,15 +250,27 @@ def get_conversation_application_service(
 def get_question_answering_pipeline(
     request: Request,
     session: Session = Depends(get_session),
-) -> QuestionAnsweringPipeline:
+    ) -> QuestionAnsweringPipeline:
     settings = get_settings(request)
 
-    embeddings_provider = NomicEmbeddingsProvider(
-        settings=settings,
-    )
 
-    llm_provider = OllamaLlmProvider(
-        settings=settings,
+    if settings.providers.embeddings.strip().lower() == "openrouter":
+        embeddings_provider = OpenRouterEmbeddingsProvider(
+            settings=settings.openrouter,
+        )
+    else:
+        embeddings_provider = NomicEmbeddingsProvider(
+            settings=settings,
+        )
+
+
+    if settings.providers.llm.strip().lower() == "openrouter":
+        llm_provider = OpenRouterLlmProvider(
+            settings=settings.openrouter,
+    )
+    else:
+        llm_provider = OllamaLlmProvider(
+            settings=settings.ollama,
     )
 
     vector_provider = PgVectorProvider(
@@ -328,14 +306,14 @@ def get_question_answering_pipeline(
 
 
 def get_chat_application_service(
-    session: Session = Depends(get_session),
-    conversation_service: ConversationApplicationService = Depends(
+        session: Session = Depends(get_session),
+        conversation_service: ConversationApplicationService = Depends(
         get_conversation_application_service,
-    ),
-    question_answering_pipeline: QuestionAnsweringPipeline = Depends(
+        ),
+        question_answering_pipeline: QuestionAnsweringPipeline = Depends(
         get_question_answering_pipeline,
-    ),
-) -> ChatApplicationService:
+        ),
+        ) -> ChatApplicationService:
     return ChatApplicationService(
         knowledge_base_repository=(
             SqlAlchemyKnowledgeBaseRepository(
@@ -361,13 +339,20 @@ def get_knowledge_ingestion_pipeline(
 ) -> KnowledgeIngestionPipeline:
     settings = get_settings(request)
 
+
     storage_provider = SupabaseStorageProvider(
         settings=settings.storage,
     )
 
-    embeddings_provider = NomicEmbeddingsProvider(
-        settings=settings,
-    )
+
+    if settings.providers.embeddings.strip().lower() == "openrouter":
+        embeddings_provider = OpenRouterEmbeddingsProvider(
+            settings=settings.openrouter,
+        )
+    else:
+        embeddings_provider = NomicEmbeddingsProvider(
+            settings=settings,
+        )
 
     vector_provider = PgVectorProvider(
         settings=settings,

@@ -31,10 +31,11 @@
     return;
   }
 
-  // Load css stylesheet dynamically
+  // Load css stylesheet dynamically from the same origin that served this script
+  // (the frontend host), NOT the backend - the backend only serves API endpoints.
   const link = document.createElement("link");
   link.rel = "stylesheet";
-  link.href = API_URL + "/widget/widget.css";
+  link.href = new URL("widget.css", document.currentScript?.src || window.location.href).href;
   document.head.appendChild(link);
 
   // Widget state
@@ -251,7 +252,7 @@
       }
     } catch {
       thinkingRow.remove();
-      addMessage("⚠️ Connection error. Please check your internet connection.", "bot");
+      addMessage("⚠️ Connectivity error. Please check on connection Establishion.", "bot");
     }
   });
 

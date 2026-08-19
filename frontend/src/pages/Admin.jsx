@@ -1,55 +1,114 @@
-import React, { useState, useEffect } from "react";
-import axios from "axios";
+import { useState, useEffect } from "react";
+import { apiClient } from "@/api/client";
 import { UploadCloud, Layers, Trash2, RefreshCw, CheckCircle2, AlertCircle, FileText, Loader2, Database } from "lucide-react";
 import { toast } from "sonner";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
-const API = `${BACKEND_URL}/api`;
-
 export default function Admin() {
+  const [applications, setApplications] = useState([]);
+  const [selectedAppId, setSelectedAppId] = useState("");
+  const [knowledgeBase, setKnowledgeBase] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isRebuilding, setIsRebuilding] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [stats, setStats] = useState({ total: 0, indexed: 0, parsing: 0, uploaded: 0 });
 
-  // Load documents
-  const fetchDocuments = async () => {
+  // Compute stats from documents (derived state)
+  const stats = {
+    total: documents.length,
+    indexed: documents.filter((d) => d.status === "indexed").length,
+    parsing: documents.filter((d) => d.status === "parsing" || d.status === "uploaded").length,
+    uploaded: documents.filter((d) => d.status === "uploaded").length,
+  };
+
+  // Load applications
+  const fetchApplications = async () => {
     try {
-      const response = await axios.get(`${API}/documents`);
-      setDocuments(response.data);
+      const response = await apiClient.get("/admin/applications");
+      return response.data;
     } catch (e) {
       console.error(e);
-      toast.error("Failed to load document directory from server.");
+      toast.error("Failed to load applications.");
+      return [];
     }
   };
 
   useEffect(() => {
-    fetchDocuments();
+    let isMounted = true;
+    
+    const loadApps = async () => {
+      const apps = await fetchApplications();
+      if (isMounted) {
+        setApplications(apps);
+        if (apps.length > 0 && !selectedAppId) {
+          setSelectedAppId(apps[0].id);
+        }
+      }
+    };
+    
+    loadApps();
+    
+    return () => {
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Compute stat widgets
+  // Load documents for selected application
   useEffect(() => {
-    const total = documents.length;
-    const indexed = documents.filter((d) => d.status === "indexed").length;
-    const parsing = documents.filter((d) => d.status === "parsing" || d.status === "uploaded").length;
-    const uploaded = documents.filter((d) => d.status === "uploaded").length;
-    setStats({ total, indexed, parsing, uploaded });
-  }, [documents]);
+    if (!selectedAppId) return;
+
+    let isMounted = true;
+
+    const loadDocuments = async () => {
+      try {
+        // First get knowledge base for the application
+        const kbRes = await apiClient.get(`/admin/knowledge-bases/by-application/${selectedAppId}`);
+        const kb = kbRes.data;
+        if (isMounted) {
+          setKnowledgeBase(kb);
+        }
+
+        // Then load documents
+        const docsRes = await apiClient.get(`/admin/documents?knowledge_base_id=${kb.id}`);
+        if (isMounted) {
+          setDocuments(docsRes.data);
+        }
+      } catch {
+        if (isMounted) {
+          console.warn("No knowledge base or documents found");
+          setDocuments([]);
+        }
+      }
+    };
+
+    loadDocuments();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedAppId]);
 
   // Status auto-polling loop (polls if any file is uploaded or parsing)
   useEffect(() => {
+    if (!knowledgeBase?.id) return;
+    
     const hasUnfinishedDocs = documents.some(
       (d) => d.status === "uploaded" || d.status === "parsing"
     );
 
     if (hasUnfinishedDocs) {
-      const interval = setInterval(() => {
-        fetchDocuments();
+      const interval = setInterval(async () => {
+        try {
+          const docsRes = await apiClient.get(`/admin/documents?knowledge_base_id=${knowledgeBase.id}`);
+          setDocuments(docsRes.data);
+        } catch (e) {
+          console.warn("Polling failed", e);
+        }
       }, 3000);
       return () => clearInterval(interval);
     }
-  }, [documents]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documents, knowledgeBase]);
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -77,6 +136,11 @@ export default function Admin() {
   };
 
   const uploadFile = async (file) => {
+    if (!knowledgeBase?.id) {
+      toast.error("Please select an application with a knowledge base first.");
+      return;
+    }
+
     const allowedExtensions = [".pdf", ".txt", ".docx", ".csv", ".json", ".md"];
     const fileExtension = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
     
@@ -88,13 +152,18 @@ export default function Admin() {
     setIsUploading(true);
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("knowledge_base_id", knowledgeBase.id);
+    formData.append("title", file.name);
 
     try {
-      const response = await axios.post(`${API}/documents/upload`, formData, {
+      await apiClient.post("/admin/documents/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" }
       });
       toast.success(`"${file.name}" uploaded successfully! Real-time parsing started.`);
-      fetchDocuments();
+      
+      // Refresh documents
+      const docsRes = await apiClient.get(`/admin/documents?knowledge_base_id=${knowledgeBase.id}`);
+      setDocuments(docsRes.data);
     } catch (e) {
       console.error(e);
       const msg = e.response?.data?.detail || "Upload operation failed.";
@@ -104,13 +173,13 @@ export default function Admin() {
     }
   };
 
-  const handleDelete = async (id, name) => {
+  const handleDelete = async (docId, name) => {
     if (!window.confirm(`Are you sure you want to delete and un-index "${name}"?`)) return;
 
     try {
-      await axios.delete(`${API}/documents/${id}`);
+      await apiClient.delete(`/admin/documents/${docId}`);
       toast.success(`Removed "${name}" from knowledge base.`);
-      fetchDocuments();
+      setDocuments((prev) => prev.filter((d) => d.id !== docId));
     } catch (e) {
       console.error(e);
       toast.error("Failed to delete document.");
@@ -118,14 +187,18 @@ export default function Admin() {
   };
 
   const handleReindex = async () => {
+    if (!knowledgeBase?.id || documents.length === 0) return;
+    
     setIsRebuilding(true);
     try {
-      const response = await axios.post(`${API}/indexing/rebuild`);
-      const data = response.data;
-      toast.success(
-        `FAISS Index Rebuilt Successfully! Indexed ${data.document_count} documents into ${data.vector_count} dense vectors.`
-      );
-      fetchDocuments();
+      await apiClient.post("/admin/ingestion/start", {
+        document_id: documents[0]?.id,
+      });
+      toast.success(`FAISS Vector Index Synced!`);
+      
+      // Refresh documents
+      const docsRes = await apiClient.get(`/admin/documents?knowledge_base_id=${knowledgeBase.id}`);
+      setDocuments(docsRes.data);
     } catch (e) {
       console.error(e);
       toast.error("FAISS Index rebuild failed.");
@@ -147,29 +220,46 @@ export default function Admin() {
           </p>
         </div>
 
-        {/* Global Reindex Action */}
-        <button
-          onClick={handleReindex}
-          disabled={isRebuilding || documents.length === 0}
-          className={`flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl font-semibold text-xs tracking-wider uppercase transition duration-300 ${
-            isRebuilding || documents.length === 0
-              ? "bg-white/5 border border-white/5 text-slate-400 cursor-not-allowed"
-              : "bg-gradient-to-r from-[#00D4FF] to-[#2563EB] text-[#040914] hover:bg-white hover:from-white hover:to-white hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(0,212,255,0.25)]"
-          }`}
-          data-testid="reindex-btn"
-        >
-          {isRebuilding ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Rebuilding Index...</span>
-            </>
-          ) : (
-            <>
-              <RefreshCw className="h-4 w-4" />
-              <span>Trigger Global Reindex</span>
-            </>
-          )}
-        </button>
+        {/* Application Selector */}
+        <div className="flex items-center gap-3">
+          <select
+            value={selectedAppId}
+            onChange={(e) => setSelectedAppId(e.target.value)}
+            className="bg-[#0B1221] border border-white/10 focus:border-[#00D4FF] text-white text-xs rounded-xl px-4 py-2.5 outline-none focus:ring-1 focus:ring-[#00D4FF] transition"
+            data-testid="app-selector"
+          >
+            <option value="">Select Application</option>
+            {applications.map((app) => (
+              <option key={app.id} value={app.id}>
+                {app.name}
+              </option>
+            ))}
+          </select>
+
+          {/* Global Reindex Action */}
+          <button
+            onClick={handleReindex}
+            disabled={isRebuilding || documents.length === 0 || !selectedAppId}
+            className={`flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl font-semibold text-xs tracking-wider uppercase transition duration-300 ${
+              isRebuilding || documents.length === 0 || !selectedAppId
+                ? "bg-white/5 border border-white/5 text-slate-400 cursor-not-allowed"
+                : "bg-gradient-to-r from-[#00D4FF] to-[#2563EB] text-[#040914] hover:scale-[1.03] active:scale-[0.97] shadow-[0_0_20px_rgba(0,212,255,0.25)]"
+            }`}
+            data-testid="reindex-btn"
+          >
+            {isRebuilding ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Rebuilding Index...</span>
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4" />
+                <span>Trigger Global Reindex</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* High Density Grid Stats */}
@@ -187,8 +277,10 @@ export default function Admin() {
           <div className="text-2xl md:text-3xl font-bold text-amber-400 mt-1.5">{stats.parsing}</div>
         </div>
         <div className="glassmorphism rounded-2xl p-5">
-          <div className="text-[#00D4FF] text-[10px] md:text-xs font-semibold tracking-wider uppercase">Ollama Model</div>
-          <div className="text-xs md:text-sm font-bold text-[#00D4FF] mt-3 truncate font-mono">llama3:latest</div>
+          <div className="text-[#00D4FF] text-[10px] md:text-xs font-semibold tracking-wider uppercase">Selected App</div>
+          <div className="text-xs md:text-sm font-bold text-[#00D4FF] mt-3 truncate">
+            {applications.find(a => a.id === selectedAppId)?.name || "None"}
+          </div>
         </div>
       </div>
 
@@ -198,8 +290,8 @@ export default function Admin() {
         <div className="lg:col-span-1">
           <div className="glassmorphism rounded-2xl p-6 border-white/10 flex flex-col">
             <h3 className="font-semibold text-sm text-slate-200 mb-4 flex items-center gap-2">
-              <Database className="h-4 w-4 text-[#00D4FF]" />
-              <span>Ingestion Pipeline</span>
+              <UploadCloud className="h-4 w-4 text-[#00D4FF]" />
+              <span>Upload to Knowledge Base</span>
             </h3>
 
             <div
@@ -262,6 +354,15 @@ export default function Admin() {
             </div>
           </div>
         </div>
+
+        {!selectedAppId && (
+          <div className="lg:col-span-2 flex items-center justify-center py-20 border-2 border-dashed border-white/10 rounded-2xl">
+            <div className="text-center">
+              <Database className="h-12 w-12 text-slate-600 mx-auto mb-3" />
+              <p className="text-slate-400 text-xs">Please select an application to view documents</p>
+            </div>
+          </div>
+        )}
 
         {/* Directory Listing (Right columns) */}
         <div className="lg:col-span-2">

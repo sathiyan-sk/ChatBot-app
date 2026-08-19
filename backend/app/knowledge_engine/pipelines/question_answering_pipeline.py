@@ -42,6 +42,13 @@ class QuestionAnsweringPipeline:
             query_embedding=query_embedding,
             top_k=request.top_k,
         )
+        # TEMPORARY DEBUG LOGGING
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Retrieved {len(retrieved_chunks)} chunks:")
+        for i, chunk in enumerate(retrieved_chunks[:5], start=1):
+            logger.info(f"[{i}] Score: {chunk.score:.3f}, Title: {chunk.document_title}, Content: {chunk.content[:200]}...")
+
 
         filtered_chunks = self.metadata_filter.apply(retrieved_chunks)
         reranked_chunks = self.reranker.rerank(

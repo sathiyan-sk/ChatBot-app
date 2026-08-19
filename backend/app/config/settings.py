@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-
 load_dotenv()
 
 
@@ -36,6 +35,15 @@ class OllamaSettings:
     llm_model_name: str
     provider_timeout_seconds: float
 
+@dataclass(slots=True, frozen=True)
+class OpenRouterSettings:
+    base_url: str
+    api_key: str
+    model: str
+    temperature: float
+    provider_timeout_seconds: float
+    embedding_model: str
+    embedding_dimensions: int
 
 @dataclass(slots=True, frozen=True)
 class ProviderSettings:
@@ -54,6 +62,7 @@ class Settings:
     providers: ProviderSettings
     storage: StorageSettings
     ollama: OllamaSettings
+    openrouter: OpenRouterSettings
 
     # These fields are intentionally on the root Settings
     # object because PgVectorProvider expects:
@@ -72,6 +81,13 @@ def load_settings() -> Settings:
         os.getenv(
             "PROVIDER_TIMEOUT_SECONDS",
             "30",
+        )
+    )
+
+    openrouter_timeout_seconds = float(
+        os.getenv(
+        "OPENROUTER_TIMEOUT_SECONDS",
+        str(provider_timeout_seconds),
         )
     )
 
@@ -161,6 +177,38 @@ def load_settings() -> Settings:
                 ollama_timeout_seconds
             ),
         ),
+
+        openrouter=OpenRouterSettings(
+            base_url=os.getenv(
+            "OPENROUTER_BASE_URL",
+            "https://openrouter.ai/api/v1",
+            ),
+            api_key=os.getenv(
+                "OPENROUTER_API_KEY",
+                "",  # empty means not configured
+            ),
+            model=os.getenv(
+                "OPENROUTER_MODEL",
+            "google/gemma-4-26b-a4b-it:free",
+            ),
+            temperature=float(
+            os.getenv(
+            "OPENROUTER_TEMPERATURE",
+            "0.2",
+            )
+        ),
+            provider_timeout_seconds=openrouter_timeout_seconds,
+            embedding_model=os.getenv(
+                "OPENROUTER_EMBEDDING_MODEL",
+                "qwen/qwen3-embedding-8b",
+                ),
+            embedding_dimensions=int(
+            os.getenv(
+            "OPENROUTER_EMBEDDING_DIMENSIONS",
+            "1024",
+            )
+        ),
+        ),
         vector_store_table_name=os.getenv(
             "VECTOR_STORE_TABLE_NAME",
             "document_chunks",
@@ -168,7 +216,7 @@ def load_settings() -> Settings:
         vector_store_dimension=int(
             os.getenv(
                 "VECTOR_STORE_DIMENSION",
-                "768",
+                "1024",
             )
         ),
         provider_timeout_seconds=provider_timeout_seconds,

@@ -1,63 +1,76 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import axios from "axios";
-import { Send, Cpu, MessageSquare, Trash2, Info, CheckCircle2, ChevronDown, ChevronUp, Copy, ThumbsUp } from "lucide-react";
+import { apiClient } from "@/api/client";
+import { Send, Cpu, MessageSquare, Trash2, Copy, ThumbsUp, ChevronDown, ChevronUp, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
-const API = `${BACKEND_URL}/api`;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+const API_KEY_STORAGE = "oceanrag_chat_api_key";
 
 export default function Chat() {
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [configInfo, setConfigInfo] = useState(null);
-  const [ollamaStatus, setOllamaStatus] = useState(null);
   const [topK, setTopK] = useState(4);
+  const [conversationId, setConversationId] = useState(null);
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem(API_KEY_STORAGE) || "");
+  const [showKeyInput, setShowKeyInput] = useState(false);
   const messagesEndRef = useRef(null);
 
   // Load chat history from localStorage on mount
   useEffect(() => {
-    const saved = localStorage.getItem("oceanrag_chat_history");
-    if (saved) {
-      try {
-        setMessages(JSON.parse(saved));
-      } catch (e) {
-        console.error("Error loading chat history", e);
-      }
-    } else {
-      // System greeting
-      setMessages([
-        {
-          id: "welcome",
-          role: "bot",
-          content: "Welcome to **OceanRAG**! I am your premium AI assistant powered by the local RAG engine. Upload files in the **Admin Console** to build my knowledge base, or ask me any general question right away.",
-          timestamp: new Date().toISOString(),
-          sources: []
+    let isMounted = true;
+
+    const loadHistory = () => {
+      const saved = localStorage.getItem("oceanrag_chat_history");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (isMounted) {
+            setMessages(parsed.messages || []);
+            setConversationId(parsed.conversationId || null);
+          }
+        } catch (e) {
+          console.error("Error loading chat history", e);
         }
-      ]);
-    }
+      } else if (isMounted) {
+        // System greeting
+        setMessages([
+          {
+            id: "welcome",
+            role: "bot",
+            content: "Welcome to **RENAI Chatbot**! I am your premium AI assistant powered by the local RAG engine. Upload files in the **Admin Console** to build my knowledge base, or ask me any general question right away.",
+            timestamp: new Date().toISOString(),
+            sources: [],
+          }
+        ]);
+      }
+    };
+
+    loadHistory();
+
+    return () => {
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Save messages to localStorage
   useEffect(() => {
     if (messages.length > 0) {
-      localStorage.setItem("oceanrag_chat_history", JSON.stringify(messages));
+      localStorage.setItem("oceanrag_chat_history", JSON.stringify({ messages, conversationId }));
     } else {
       localStorage.removeItem("oceanrag_chat_history");
     }
-  }, [messages]);
+  }, [messages, conversationId]);
 
   // Fetch System Details
   useEffect(() => {
     const fetchSystemDetails = async () => {
       try {
-        const [configRes, ollamaRes] = await Promise.all([
-          axios.get(`${API}/system/config`),
-          axios.get(`${API}/system/ollama`)
-        ]);
-        setConfigInfo(configRes.data);
-        setOllamaStatus(ollamaRes.data);
+        const configRes = await fetch(`${BACKEND_URL}/api/system/config`).then(r => r.json()).catch(() => null);
+        if (configRes) setConfigInfo(configRes);
       } catch (e) {
         console.warn("Could not fetch system info", e);
       }
@@ -82,31 +95,42 @@ export default function Chat() {
     };
 
     setMessages((prev) => [...prev, userMsg]);
+    const currentQuestion = question;
     setQuestion("");
     setIsLoading(true);
 
     try {
-      const response = await axios.post(`${API}/rag/chat`, {
-        question: userMsg.content,
-        top_k: topK
+      const response = await apiClient.post("/client/chat/messages", {
+        conversation_identity: "web-user-" + (conversationId || Date.now()),
+        message: currentQuestion,
+        conversation_id: conversationId,
+        conversation_title: "Web Chat Session",
+      }, {
+        headers: {
+          "X-API-Key": apiKey,
+        },
       });
 
       const data = response.data;
+
+      // Store conversation ID for subsequent messages
+      if (data.conversation_id && !conversationId) {
+        setConversationId(data.conversation_id);
+      }
+
       const botMsg = {
         id: `bot-${Date.now()}`,
         role: "bot",
         content: data.answer,
         timestamp: new Date().toISOString(),
-        sources: data.sources || [],
-        model_used: data.model_used,
-        embedding_model_used: data.embedding_model_used,
-        retrieval_backend: data.retrieval_backend
+        sources: data.citations || [],
+        conversation_id: data.conversation_id,
       };
 
       setMessages((prev) => [...prev, botMsg]);
     } catch (error) {
       console.error(error);
-      toast.error("Failed to fetch response from localized RAG engine.");
+      toast.error("Failed to fetch response from RAG engine.");
       
       const errorMsg = {
         id: `bot-err-${Date.now()}`,
@@ -123,6 +147,7 @@ export default function Chat() {
   };
 
   const handleClearHistory = () => {
+    setConversationId(null);
     setMessages([
       {
         id: `welcome-${Date.now()}`,
@@ -154,12 +179,42 @@ export default function Chat() {
           <div>
             <div className="font-semibold text-slate-200">RAG Engine Configuration</div>
             <div className="text-slate-400 font-mono text-[10px] mt-0.5">
-              LLM: {configInfo?.ollama_chat_model || "llama3"} • Embed: {configInfo?.ollama_embed_model || "nomic-embed"}
+              {configInfo ? `LLM: ${configInfo.ollama_chat_model || "llama3"} • Embed: ${configInfo.ollama_embed_model || "nomic-embed"}` : "Loading system config..."}
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-4">
+          {/* API Key input */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setShowKeyInput(!showKeyInput)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition ${
+                apiKey
+                  ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                  : "border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+              }`}
+              title={apiKey ? "API key configured" : "Set API key"}
+              data-testid="chat-api-key-toggle"
+            >
+              <KeyRound className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline font-medium">{apiKey ? "Key Set" : "Set API Key"}</span>
+            </button>
+            {showKeyInput && (
+              <input
+                type="text"
+                value={apiKey}
+                onChange={(e) => {
+                  setApiKey(e.target.value);
+                  localStorage.setItem(API_KEY_STORAGE, e.target.value);
+                }}
+                placeholder="akp_..."
+                className="w-40 bg-slate-900 border border-white/10 rounded-md py-1 px-2 text-white font-mono text-[10px] focus:ring-1 focus:ring-[#00D4FF] focus:outline-none"
+                data-testid="chat-api-key-input"
+              />
+            )}
+          </div>
+
           <div className="flex items-center gap-1.5">
             <span className="text-slate-400">Search top_k chunks:</span>
             <select
@@ -336,7 +391,7 @@ export default function Chat() {
           className={`h-10 px-5 rounded-xl flex items-center justify-center gap-2 transition duration-300 font-medium text-xs tracking-wider ${
             isLoading || !question.trim()
               ? "bg-white/5 border border-white/5 text-slate-400 cursor-not-allowed"
-              : "bg-[#00D4FF] text-[#040914] font-semibold hover:bg-white hover:text-[#040914] shadow-[0_0_15px_rgba(0,212,255,0.3)] hover:scale-105 active:scale-95"
+              : "bg-[#00D4FF] text-[#040914] font-semibold hover:bg-white hover:text-[#040914] shadow-[0_0_15px_rgba(0,212,255,0.3)] hover:scale-105 active:scale-95 cursor-pointer"
           }`}
           data-testid="chat-submit"
         >
@@ -371,26 +426,17 @@ function SourcesAccordion({ sources }) {
               className="bg-white/5 border border-white/10 rounded-xl p-3 text-xs text-slate-300"
               data-testid={`rag-source-${idx}`}
             >
-              <div className="flex items-center justify-between mb-1.5 pb-1 border-b border-white/5">
+              <div className="flex items-center justify-between mb-1.5 pb-1.5 border-b border-white/5">
                 <span className="font-semibold text-slate-200 bg-white/5 px-2 py-0.5 rounded border border-white/5">
-                  Source: {src.source_file || "Unknown"}
+                  Source: {src.document_id || "Context"}
                 </span>
-                <span className="font-mono text-[10px] text-[#00D4FF] font-semibold">
-                  Score: {(src.score * 100).toFixed(1)}% • Rank {src.rank}
+                <span className="text-[10px] text-[#00D4FF] font-mono">
+                  Chunk: {src.chunk_id}
                 </span>
               </div>
               <p className="leading-relaxed italic bg-[#040914]/40 p-2 rounded border border-white/5 font-mono text-[11px]">
-                &ldquo;{src.text}&rdquo;
+                {src.title}
               </p>
-              {src.metadata && (
-                <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-400">
-                  <span>Page: {src.metadata.page || "N/A"}</span>
-                  <span>•</span>
-                  <span>Section: {src.metadata.section || "N/A"}</span>
-                  <span>•</span>
-                  <span>Chunk ID: {src.chunk_id}</span>
-                </div>
-              )}
             </div>
           ))}
         </div>

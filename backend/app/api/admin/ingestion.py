@@ -10,6 +10,7 @@ from fastapi import (
     status,
 )
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.dependencies import (
     get_document_application_service,
@@ -42,7 +43,13 @@ router = APIRouter(
     prefix="/admin/ingestion",
     tags=["Admin Ingestion"],
 )
-
+def _safe_rollback(session: Session) -> None:
+    try:
+        session.rollback()
+    except SQLAlchemyError:
+        logger.exception(
+            "Database rollback failed; closing broken session.",
+        )
 
 def _resolve_source_type(
     document: object,
@@ -228,32 +235,18 @@ def _resolve_source_identifier(
 def run_document_ingestion_task(
     document_id: str,
 ) -> None:
-    from app.main import app
     from types import SimpleNamespace
-    request_context = SimpleNamespace(
-        app=app
-    )
 
-    logger.info(
-        "Background request context type: %s",
-        type(request_context).__name__,
-    )
-    session_factory = (
-        app.state.session_factory
-    )
-    if isinstance(request_context, tuple):
-        raise RuntimeError(
-            "request_context must not be a tuple"
-        )
+    from app.main import app
 
+    request_context = SimpleNamespace(app=app)
+    session_factory = app.state.session_factory
     session: Session = session_factory()
 
     try:
-        document_service = (
-            get_document_application_service(
-                request=request_context,
-                session=session,
-            )
+        document_service = get_document_application_service(
+            request=request_context,
+            session=session,
         )
 
         document = document_service.get_by_id(
@@ -267,32 +260,26 @@ def run_document_ingestion_task(
                 document_id=document_id,
             )
         )
+        session.commit()
 
-        source_identifier = (
-        _resolve_source_identifier(
-        document,
-            )
+        source_identifier = _resolve_source_identifier(
+            document,
         )
-
         source_type = _resolve_source_type(
-        document,
-        source_identifier,
+            document,
+            source_identifier,
         )
 
-        ingestion_pipeline = (
-            get_knowledge_ingestion_pipeline(
-                source_type=source_type,
-                request=request_context,
-                session=session,
-            )
+        ingestion_pipeline = get_knowledge_ingestion_pipeline(
+            source_type=source_type,
+            request=request_context,
+            session=session,
         )
 
-        pipeline_request = (
-            _build_pipeline_request(
-                document=document,
-                source_path=source_identifier,
-                source_type=source_type,
-            )
+        pipeline_request = _build_pipeline_request(
+            document=document,
+            source_path=source_identifier,
+            source_type=source_type,
         )
 
         logger.info(
@@ -304,16 +291,13 @@ def run_document_ingestion_task(
             },
         )
 
-        ingestion_pipeline.run(
-            pipeline_request,
-        )
+        ingestion_pipeline.run(pipeline_request)
 
         document_service.mark_ready(
             MarkDocumentReadyCommand(
                 document_id=document_id,
             )
         )
-
         session.commit()
 
         logger.info(
@@ -325,8 +309,6 @@ def run_document_ingestion_task(
         )
 
     except Exception as exc:
-        session.rollback()
-
         logger.exception(
             "Background document ingestion failed",
             extra={
@@ -334,25 +316,37 @@ def run_document_ingestion_task(
             },
         )
 
+        _safe_rollback(session)
+        session.close()
+
+        failed_session: Session | None = None
+
         try:
-            document_service = (
+            failed_session = session_factory()
+
+            failed_request_context = SimpleNamespace(
+                app=app,
+            )
+
+            failed_document_service = (
                 get_document_application_service(
-                    request=request_context,
-                    session=session,
+                    request=failed_request_context,
+                    session=failed_session,
                 )
             )
 
-            document_service.mark_failed(
+            failed_document_service.mark_failed(
                 MarkDocumentFailedCommand(
                     document_id=document_id,
                     failure_reason=str(exc),
                 )
             )
 
-            session.commit()
+            failed_session.commit()
 
         except Exception:
-            session.rollback()
+            if failed_session is not None:
+                _safe_rollback(failed_session)
 
             logger.exception(
                 "Could not mark document as failed",
@@ -361,8 +355,22 @@ def run_document_ingestion_task(
                 },
             )
 
+        finally:
+            if failed_session is not None:
+                failed_session.close()
+
+        return
+
     finally:
-        session.close()
+        try:
+            session.close()
+        except Exception:
+            logger.exception(
+                "Could not close ingestion database session.",
+                extra={
+                    "document_id": document_id,
+                },
+            )
 
 
 @router.post(
@@ -373,19 +381,17 @@ def run_document_ingestion_task(
 def start_ingestion(
     payload: StartIngestionRequest,
     request: Request,
-    document_service: DocumentApplicationService = Depends(
-        get_document_application_service,
-    ),
+    document_service: DocumentApplicationService = Depends(get_document_application_service,
+),
     session: Session = Depends(get_session),
 ) -> IngestionResponse:
     processing_document = None
+    failure_reason: str | None = None
 
     try:
-        processing_document = (
-            document_service.mark_processing(
-                MarkDocumentProcessingCommand(
-                    document_id=payload.document_id,
-                )
+        processing_document = document_service.mark_processing(
+            MarkDocumentProcessingCommand(
+                document_id=payload.document_id,
             )
         )
 
@@ -405,9 +411,7 @@ def start_ingestion(
         )
 
         if pipeline_factory is None:
-            pipeline_factory = (
-                get_knowledge_ingestion_pipeline
-            )
+            pipeline_factory = get_knowledge_ingestion_pipeline
 
         ingestion_pipeline = pipeline_factory(
             source_type=source_type,
@@ -415,12 +419,10 @@ def start_ingestion(
             session=session,
         )
 
-        pipeline_request = (
-            _build_pipeline_request(
-                document=processing_document,
-                source_path=source_path,
-                source_type=source_type,
-            )
+        pipeline_request = _build_pipeline_request(
+            document=processing_document,
+            source_path=source_path,
+            source_type=source_type,
         )
 
         ingestion_pipeline.run(
@@ -439,8 +441,7 @@ def start_ingestion(
         )
 
     except Exception as exc:
-        session.rollback()
-
+        failure_reason = str(exc)
         logger.exception(
             "Manual document ingestion failed",
             extra={
@@ -449,14 +450,47 @@ def start_ingestion(
         )
 
         try:
-            document_service.mark_failed(
+            session.rollback()
+        except Exception:
+            logger.exception(
+                "Manual ingestion rollback failed.",
+                extra={
+                    "document_id": payload.document_id,
+                },
+            )
+
+        session.close()
+
+        failed_session: Session | None = None
+
+        try:
+            failed_session = request.app.state.session_factory()
+
+            failed_document_service = get_document_application_service(
+                request=request,
+                session=failed_session,
+            )
+
+            failed_document_service.mark_failed(
                 MarkDocumentFailedCommand(
                     document_id=payload.document_id,
-                    failure_reason=str(exc),
+                    failure_reason=failure_reason,
                 )
             )
+
+            failed_session.commit()
+
         except Exception:
-            session.rollback()
+            if failed_session is not None:
+                try:
+                    failed_session.rollback()
+                except Exception:
+                    logger.exception(
+                        "Failed-session rollback also failed.",
+                        extra={
+                            "document_id": payload.document_id,
+                        },
+                    )
 
             logger.exception(
                 "Could not mark document as failed",
@@ -469,8 +503,6 @@ def start_ingestion(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
                 "code": "document_ingestion_failed",
-                "message": (
-                    "Document ingestion failed."
-                ),
+                "message": "Document ingestion failed.",
             },
         ) from exc

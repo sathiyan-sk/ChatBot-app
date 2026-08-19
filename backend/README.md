@@ -104,6 +104,8 @@ uvicorn app.main:app --reload
 - Stop all Uvicorn processes:
 Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
 
+
+.\.venv\Scripts\python.exe -m compileall app 
 uvicorn app.main:app
 
 - clear cache and py files by;

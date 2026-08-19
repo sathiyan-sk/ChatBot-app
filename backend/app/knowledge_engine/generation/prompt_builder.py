@@ -1,36 +1,57 @@
 from __future__ import annotations
 
-from app.knowledge_engine.shared.models import RetrievedChunk
+from app.knowledge_engine.domain.models import KnowledgeChunk
 
 
 class PromptBuilder:
     def build_system_prompt(self) -> str:
+        """
+        Returns the system prompt that instructs the LLM to answer based only on context.
+        """
         return (
-            "You are an AI knowledge assistant. "
-            "Answer only from the retrieved knowledge and the recent conversation context. "
-            "Do not invent facts. If the knowledge is insufficient, clearly say so."
+                  "You are a helpful assistant. Answer the question below using the provided context.\n"
+        "If the context contains relevant information, use it to give a complete answer.\n"
+        "Cite sources using [1], [2], etc. when you reference specific context items.\n"
+        "If the context truly has no relevant information, you may use your general knowledge to help.\n\n"
+        "Context is provided below. Use it to answer the question."
         )
 
     def build_user_prompt(
         self,
         *,
         query_text: str,
-        conversation_messages: list[dict[str, str]],
-        retrieved_chunks: list[RetrievedChunk],
+        conversation_messages: list[dict[str, str]] | None = None,
+        retrieved_chunks: list[KnowledgeChunk],
     ) -> str:
-        conversation_block = "\n".join(
-            f"{item['role']}: {item['content']}"
-            for item in conversation_messages
-        ) or "No recent conversation."
+        """
+        Builds the user prompt containing context + question.
+        """
+        # Build context section with numbered chunks
+        context_parts = []
+        for i, chunk in enumerate(retrieved_chunks, start=1):
+            context_parts.append(
+                f"[{i}] {chunk.content}\n"
+                f"   (Source: {chunk.document_title}, Score: {chunk.score:.3f})"
+            )
 
-        knowledge_block = "\n\n".join(
-            f"[{index + 1}] {chunk.document_title}\n{chunk.content}"
-            for index, chunk in enumerate(retrieved_chunks)
-        ) or "No retrieved knowledge."
+        context_text = "\n\n".join(context_parts)
 
-        return (
-            f"Recent conversation:\n{conversation_block}\n\n"
-            f"Retrieved knowledge:\n{knowledge_block}\n\n"
-            f"Question:\n{query_text}\n\n"
-            "Return a concise grounded answer."
+        # Add conversation history if provided
+        conversation_text = ""
+        if conversation_messages:
+            conversation_parts = []
+            for msg in conversation_messages:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                conversation_parts.append(f"{role}: {content}")
+            conversation_text = "\n".join(conversation_parts) + "\n\n"
+
+        # Final user prompt
+        user_prompt = (
+            f"{conversation_text}"
+            f"Context:\n{context_text}\n\n"
+            f"Question: {query_text}\n\n"
+            "Answer:"
         )
+
+        return user_prompt

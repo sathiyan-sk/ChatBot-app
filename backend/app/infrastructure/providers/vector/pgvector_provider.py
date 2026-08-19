@@ -36,10 +36,11 @@ class PgVectorProvider(VectorStoreContract):
 
         source_uri = metadata.get("source_identifier")
         embedding_literal = self._to_pgvector_literal(embedding)
+        table_name = self.settings.vector_store_table_name
 
         statement = text(
             f"""
-            insert into {self.settings.vector_store_table_name} (
+            insert into {table_name} (
                 chunk_id,
                 knowledge_base_id,
                 document_id,
@@ -51,8 +52,8 @@ class PgVectorProvider(VectorStoreContract):
             )
             values (
                 :chunk_id,
-                :knowledge_base_id,
-                :document_id,
+                cast(:knowledge_base_id as text),
+                cast(:document_id as text),
                 :document_title,
                 :content,
                 :source_uri,
@@ -75,8 +76,8 @@ class PgVectorProvider(VectorStoreContract):
             statement,
             {
                 "chunk_id": chunk_id,
-                "knowledge_base_id": knowledge_base_id,
-                "document_id": document_id,
+                "knowledge_base_id": str(knowledge_base_id) if not isinstance(knowledge_base_id, str) else knowledge_base_id,
+                "document_id": str(document_id) if not isinstance(document_id, str) else document_id,
                 "document_title": document_title,
                 "content": content,
                 "source_uri": source_uri,
@@ -92,6 +93,8 @@ class PgVectorProvider(VectorStoreContract):
         query_embedding: list[float],
         top_k: int,
     ) -> list[RetrievedChunk]:
+        table_name = self.settings.vector_store_table_name
+
         statement = text(
             f"""
             select
@@ -102,8 +105,8 @@ class PgVectorProvider(VectorStoreContract):
                 source_uri,
                 metadata_json,
                 1 - (embedding <=> cast(:query_embedding as vector)) as score
-            from {self.settings.vector_store_table_name}
-            where knowledge_base_id = :knowledge_base_id
+            from {table_name}
+            where knowledge_base_id = cast(:knowledge_base_id as text)
             order by embedding <=> cast(:query_embedding as vector)
             limit :top_k
             """
@@ -112,7 +115,7 @@ class PgVectorProvider(VectorStoreContract):
         result = self.session.execute(
             statement,
             {
-                "knowledge_base_id": knowledge_base_id,
+                "knowledge_base_id": str(knowledge_base_id) if not isinstance(knowledge_base_id, str) else knowledge_base_id,
                 "query_embedding": self._to_pgvector_literal(query_embedding),
                 "top_k": top_k,
             },
@@ -126,6 +129,8 @@ class PgVectorProvider(VectorStoreContract):
         query_text: str,
         top_k: int,
     ) -> list[RetrievedChunk]:
+        table_name = self.settings.vector_store_table_name
+
         statement = text(
             f"""
             select
@@ -136,11 +141,11 @@ class PgVectorProvider(VectorStoreContract):
                 source_uri,
                 metadata_json,
                 ts_rank_cd(
-                    to_tsvector('english', content),
-                    plainto_tsquery('english', :query_text)
+                to_tsvector('english', content),
+                plainto_tsquery('english', :query_text)
                 ) as score
-            from {self.settings.vector_store_table_name}
-            where knowledge_base_id = :knowledge_base_id
+            from {table_name}
+            where knowledge_base_id = cast(:knowledge_base_id as text)
               and to_tsvector('english', content) @@ plainto_tsquery('english', :query_text)
             order by score desc
             limit :top_k
@@ -150,7 +155,7 @@ class PgVectorProvider(VectorStoreContract):
         result = self.session.execute(
             statement,
             {
-                "knowledge_base_id": knowledge_base_id,
+                "knowledge_base_id": str(knowledge_base_id) if not isinstance(knowledge_base_id, str) else knowledge_base_id,
                 "query_text": query_text,
                 "top_k": top_k,
             },
@@ -181,3 +186,36 @@ class PgVectorProvider(VectorStoreContract):
     def _to_json(self, metadata: dict[str, str]) -> str:
         import json
         return json.dumps(metadata)
+
+    def ensure_schema(self) -> None:
+        table_name = self.settings.vector_store_table_name
+        dimension = self.settings.vector_store_dimension
+
+        statement = text(
+            f"""
+            create extension if not exists vector;
+
+            create table if not exists {table_name} (
+                chunk_id text primary key,
+                knowledge_base_id text not null,
+                document_id text not null,
+                document_title text not null,
+                content text not null,
+                source_uri text,
+                metadata_json jsonb default '{{}}'::jsonb,
+                embedding vector({dimension}) not null
+            );
+
+            create index if not exists {table_name}_kb_idx
+                on {table_name} (knowledge_base_id);
+
+            {'create index if not exists ' + table_name + '_embedding_idx on ' + table_name + ' using hnsw (embedding vector_cosine_ops);' if dimension <= 2000 else '-- HNSW index skipped: dimension ' + str(dimension) + ' exceeds pgvector limit of 2000'}
+
+            create index if not exists {table_name}_content_fts_idx
+                on {table_name}
+                using gin (to_tsvector('english', content));
+            """
+        )
+
+        self.session.execute(statement)
+        self.session.commit()

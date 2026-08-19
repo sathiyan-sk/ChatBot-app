@@ -31,10 +31,12 @@
     return;
   }
 
-  // Load css stylesheet dynamically
+  // Load css stylesheet dynamically from the same origin that served this script
+  // (the backend host), NOT the frontend - the backend serves both the widget
+  // static assets and the API endpoints.
   const link = document.createElement("link");
   link.rel = "stylesheet";
-  link.href = API_URL + "/widget/widget.css";
+  link.href = new URL("widget.css", document.currentScript?.src || window.location.href).href;
   document.head.appendChild(link);
 
   // Widget state
