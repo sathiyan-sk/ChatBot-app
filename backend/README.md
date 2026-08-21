@@ -97,6 +97,8 @@ Get-Command python
 
 run by setup runner file(run.py)
 (or)
+.\.venv\Scripts\python.exe -m uvicorn app.main:app
+or
 uvicorn app.main:app --reload
 
 

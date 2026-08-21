@@ -148,7 +148,7 @@ def load_settings() -> Settings:
             ),
             supabase_bucket_name=os.getenv(
                 "SUPABASE_BUCKET_NAME",
-                "documents",
+                "data_files",
             ),
             supabase_service_role_key=os.getenv(
                 "SUPABASE_SERVICE_ROLE_KEY",
