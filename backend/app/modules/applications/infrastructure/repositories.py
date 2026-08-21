@@ -55,7 +55,8 @@ class ApplicationSqlAlchemyRepository(ApplicationRepository):
         return map_application_model_to_entity(model)
 
     def get_model_by_id(self, application_id: str) -> ApplicationModel | None:
-        statement = select(ApplicationModel).where(ApplicationModel.id == application_id)
+        normalized_application_id = str(application_id)
+        statement = select(ApplicationModel).where(ApplicationModel.id == normalized_application_id)
         return self._session.execute(statement).scalar_one_or_none()
 
     def get_by_slug(self, slug: str) -> Application | None:
@@ -152,7 +153,8 @@ class ApplicationProvisioningSqlAlchemyRepository(ApplicationProvisioningReposit
         self._session.flush()
 
     def get_model_by_id(self, application_id: str) -> ApplicationModel | None:
-        statement = select(ApplicationModel).where(ApplicationModel.id == application_id)
+        normalized_application_id = str(application_id)
+        statement = select(ApplicationModel).where(ApplicationModel.id == normalized_application_id)
         return self._session.execute(statement).scalar_one_or_none()
 
     def get_by_slug(self, slug: str) -> Application | None:

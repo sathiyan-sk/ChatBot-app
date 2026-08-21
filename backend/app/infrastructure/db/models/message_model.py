@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from uuid import UUID as PyUUID
+
 from sqlalchemy import ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db.base import Base, TimestampMixin, UuidPrimaryKeyMixin
@@ -14,8 +17,8 @@ class MessageModel(UuidPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_messages_sequence_number", "sequence_number"),
     )
 
-    conversation_id: Mapped[str] = mapped_column(
-        String(36),
+    conversation_id: Mapped[PyUUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("conversations.id", ondelete="CASCADE"),
         nullable=False,
     )

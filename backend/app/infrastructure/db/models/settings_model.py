@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from uuid import UUID as PyUUID
+
 from sqlalchemy import ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db.base import Base, TimestampMixin, UuidPrimaryKeyMixin
@@ -12,8 +15,8 @@ class SettingsModel(UuidPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_application_settings_application_id", "application_id"),
     )
 
-    application_id: Mapped[str] = mapped_column(
-        String(36),
+    application_id: Mapped[PyUUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("applications.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,

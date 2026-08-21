@@ -37,7 +37,8 @@ class SqlAlchemySettingsRepository(SettingsRepositoryInterface):
         return map_settings_model_to_entity(model)
 
     def get_by_application_id(self, application_id: str) -> PlatformSettings | None:
-        statement = select(SettingsModel).where(SettingsModel.application_id == application_id)
+        normalized_application_id = str(application_id)
+        statement = select(SettingsModel).where(SettingsModel.application_id == normalized_application_id)
         model = self._session.execute(statement).scalar_one_or_none()
         return None if model is None else map_settings_model_to_entity(model)
 

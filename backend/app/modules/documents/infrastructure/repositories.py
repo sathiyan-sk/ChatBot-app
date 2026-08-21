@@ -13,6 +13,10 @@ class SqlAlchemyDocumentRepository(DocumentRepositoryInterface):
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    @staticmethod
+    def _normalize_id(value: UUID | str) -> str:
+        return str(value)
+
     def create(
     self,
     *,
@@ -51,7 +55,8 @@ class SqlAlchemyDocumentRepository(DocumentRepositoryInterface):
         return map_document_model_to_entity(model)
 
     def get_by_id(self, document_id: str) -> Document | None:
-        statement = select(DocumentModel).where(DocumentModel.id == document_id)
+        normalized_document_id = self._normalize_id(document_id)
+        statement = select(DocumentModel).where(DocumentModel.id == normalized_document_id)
         model = self._session.execute(statement).scalar_one_or_none()
         if model is None:
             return None
@@ -63,9 +68,10 @@ class SqlAlchemyDocumentRepository(DocumentRepositoryInterface):
         knowledge_base_id: UUID | str,
         status: str | None = None,
     ) -> list[Document]:
+        normalized_knowledge_base_id = self._normalize_id(knowledge_base_id)
         statement = (
             select(DocumentModel)
-            .where(DocumentModel.knowledge_base_id == knowledge_base_id)
+            .where(DocumentModel.knowledge_base_id == normalized_knowledge_base_id)
             .order_by(DocumentModel.created_at.desc())
         )
         if status is not None:
@@ -92,7 +98,8 @@ class SqlAlchemyDocumentRepository(DocumentRepositoryInterface):
         status: str,
         failure_reason: str | None,
     ) -> Document:
-        statement = select(DocumentModel).where(DocumentModel.id == document_id)
+        normalized_document_id = self._normalize_id(document_id)
+        statement = select(DocumentModel).where(DocumentModel.id == normalized_document_id)
         model = self._session.execute(statement).scalar_one()
         model.title = title
         model.description = description

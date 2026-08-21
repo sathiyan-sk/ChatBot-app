@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from uuid import uuid4
+from uuid import UUID as PyUUID, uuid4
 
-from sqlalchemy import DateTime, MetaData, String, func
+from sqlalchemy import DateTime, MetaData, func
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -35,10 +36,10 @@ class TimestampMixin:
 
 
 class UuidPrimaryKeyMixin:
-    id: Mapped[str] = mapped_column(
-        String(36),
+    id: Mapped[PyUUID] = mapped_column(
+        UUID(as_uuid=True),
         primary_key=True,
-        default=lambda: str(uuid4()),
+        default=uuid4,
     )
 
 

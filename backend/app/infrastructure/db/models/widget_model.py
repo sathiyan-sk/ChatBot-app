@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID as PyUUID
+
 from sqlalchemy import (
     Boolean,
     ForeignKey,
@@ -7,6 +9,7 @@ from sqlalchemy import (
     String,
     Text,
 )
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import (
     Mapped,
     mapped_column,
@@ -42,8 +45,8 @@ class WidgetModel(
         ),
     )
 
-    application_id: Mapped[str] = mapped_column(
-        String(36),
+    application_id: Mapped[PyUUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey(
             "applications.id",
             ondelete="CASCADE",

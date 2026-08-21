@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from uuid import UUID as PyUUID
+
 from sqlalchemy import ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db.base import Base, TimestampMixin, UuidPrimaryKeyMixin
@@ -15,13 +18,13 @@ class DocumentModel(UuidPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_documents_source_type", "source_type"),
     )
 
-    application_id: Mapped[str] = mapped_column(
-        String(36),
+    application_id: Mapped[PyUUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("applications.id", ondelete="CASCADE"),
         nullable=False,
     )
-    knowledge_base_id: Mapped[str] = mapped_column(
-        String(36),
+    knowledge_base_id: Mapped[PyUUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("knowledge_bases.id", ondelete="CASCADE"),
         nullable=False,
     )
