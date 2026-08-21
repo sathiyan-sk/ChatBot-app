@@ -191,31 +191,41 @@ class PgVectorProvider(VectorStoreContract):
         table_name = self.settings.vector_store_table_name
         dimension = self.settings.vector_store_dimension
 
-        statement = text(
-            f"""
-            create extension if not exists vector;
-
-            create table if not exists {table_name} (
-                chunk_id text primary key,
-                knowledge_base_id text not null,
-                document_id text not null,
-                document_title text not null,
-                content text not null,
-                source_uri text,
-                metadata_json jsonb default '{{}}'::jsonb,
-                embedding vector({dimension}) not null
-            );
-
-            create index if not exists {table_name}_kb_idx
-                on {table_name} (knowledge_base_id);
-
-            {'create index if not exists ' + table_name + '_embedding_idx on ' + table_name + ' using hnsw (embedding vector_cosine_ops);' if dimension <= 2000 else '-- HNSW index skipped: dimension ' + str(dimension) + ' exceeds pgvector limit of 2000'}
-
-            create index if not exists {table_name}_content_fts_idx
-                on {table_name}
-                using gin (to_tsvector('english', content));
-            """
+        hnsw_index_sql = (
+            f"create index if not exists {table_name}_embedding_idx "
+            f"on {table_name} using hnsw (embedding vector_cosine_ops);"
+            if dimension <= 2000
+            else (
+                f"-- HNSW index skipped: dimension {dimension} exceeds "
+                "pgvector limit of 2000"
+            )
         )
 
-        self.session.execute(statement)
+        statements = [
+            "create extension if not exists vector;",
+            (
+                f"create table if not exists {table_name} ("
+                "chunk_id text primary key, "
+                "knowledge_base_id text not null, "
+                "document_id text not null, "
+                "document_title text not null, "
+                "content text not null, "
+                "source_uri text, "
+                "metadata_json jsonb default '{{}}'::jsonb, "
+                f"embedding vector({dimension}) not null"
+                ");"
+            ),
+            f"create index if not exists {table_name}_kb_idx on {table_name} (knowledge_base_id);",
+            hnsw_index_sql,
+            (
+                f"create index if not exists {table_name}_content_fts_idx "
+                f"on {table_name} using gin (to_tsvector('english', content));"
+            ),
+        ]
+
+        for statement in statements:
+            if statement.strip().startswith("--"):
+                continue
+            self.session.execute(text(statement))
+
         self.session.commit()

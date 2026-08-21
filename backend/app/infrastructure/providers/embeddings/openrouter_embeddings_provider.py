@@ -67,6 +67,7 @@ class OpenRouterEmbeddingsProvider(EmbeddingProvider):
         payload = {
             "model": model,
             "input": normalized,
+            "dimensions": dimensions,
         }
 
         try:

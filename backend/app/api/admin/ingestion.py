@@ -4,6 +4,7 @@ import logging
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     HTTPException,
     Request,
@@ -164,10 +165,8 @@ def _build_pipeline_request(
     source_type: str,
 ) -> KnowledgeIngestionPipelineRequest:
     return KnowledgeIngestionPipelineRequest(
-        document_id=str(getattr(document,"id",)
-        ),
-        knowledge_base_id=str(getattr(document,"knowledge_base_id",)
-        ),
+        document_id=str(getattr(document, "id", "")),
+        knowledge_base_id=str(getattr(document, "knowledge_base_id", "")),
         source_type=source_type,
         source_path=source_path,
         source_identifier=source_path,
@@ -232,6 +231,15 @@ def _resolve_source_identifier(
     )
 
 
+def _get_app_session_factory(app: object):
+    session_factory = getattr(app.state, "session_factory", None)
+    if session_factory is None:
+        raise RuntimeError(
+            "Application database session factory is not initialized.",
+        )
+    return session_factory
+
+
 def run_document_ingestion_task(
     document_id: str,
 ) -> None:
@@ -240,7 +248,7 @@ def run_document_ingestion_task(
     from app.main import app
 
     request_context = SimpleNamespace(app=app)
-    session_factory = app.state.session_factory
+    session_factory = _get_app_session_factory(app)
     session: Session = session_factory()
 
     try:
@@ -316,48 +324,27 @@ def run_document_ingestion_task(
             },
         )
 
-        _safe_rollback(session)
-        session.close()
-
-        failed_session: Session | None = None
-
         try:
-            failed_session = session_factory()
-
-            failed_request_context = SimpleNamespace(
-                app=app,
+            _safe_rollback(session)
+            failed_document_service = get_document_application_service(
+                request=request_context,
+                session=session,
             )
-
-            failed_document_service = (
-                get_document_application_service(
-                    request=failed_request_context,
-                    session=failed_session,
-                )
-            )
-
             failed_document_service.mark_failed(
                 MarkDocumentFailedCommand(
                     document_id=document_id,
                     failure_reason=str(exc),
                 )
             )
-
-            failed_session.commit()
-
+            session.commit()
         except Exception:
-            if failed_session is not None:
-                _safe_rollback(failed_session)
-
+            _safe_rollback(session)
             logger.exception(
                 "Could not mark document as failed",
                 extra={
                     "document_id": document_id,
                 },
             )
-
-        finally:
-            if failed_session is not None:
-                failed_session.close()
 
         return
 
@@ -374,76 +361,32 @@ def run_document_ingestion_task(
 
 
 @router.post(
-    "/start",
-    response_model=IngestionResponse,
-    status_code=status.HTTP_202_ACCEPTED,
+"/start",
+response_model=IngestionResponse,
+status_code=status.HTTP_202_ACCEPTED,
 )
 def start_ingestion(
     payload: StartIngestionRequest,
+    background_tasks: BackgroundTasks,
     request: Request,
-    document_service: DocumentApplicationService = Depends(get_document_application_service,
-),
-    session: Session = Depends(get_session),
 ) -> IngestionResponse:
-    processing_document = None
-    failure_reason: str | None = None
+    session_factory = _get_app_session_factory(request.app)
+    session: Session = session_factory()
 
     try:
-        processing_document = document_service.mark_processing(
+        document_service = get_document_application_service(
+            request=request,
+            session=session,
+        )
+        document_service.mark_processing(
             MarkDocumentProcessingCommand(
                 document_id=payload.document_id,
             )
         )
-
-        source_path = _resolve_source_identifier(
-            processing_document,
-        )
-
-        source_type = _resolve_source_type(
-            processing_document,
-            source_path,
-        )
-
-        pipeline_factory = getattr(
-            request.app.state,
-            "knowledge_ingestion_pipeline_factory",
-            None,
-        )
-
-        if pipeline_factory is None:
-            pipeline_factory = get_knowledge_ingestion_pipeline
-
-        ingestion_pipeline = pipeline_factory(
-            source_type=source_type,
-            request=request,
-            session=session,
-        )
-
-        pipeline_request = _build_pipeline_request(
-            document=processing_document,
-            source_path=source_path,
-            source_type=source_type,
-        )
-
-        ingestion_pipeline.run(
-            pipeline_request,
-        )
-
-        document_service.mark_ready(
-            MarkDocumentReadyCommand(
-                document_id=payload.document_id,
-            )
-        )
-
-        return IngestionResponse(
-            document_id=payload.document_id,
-            status="ready",
-        )
-
+        session.commit()
     except Exception as exc:
-        failure_reason = str(exc)
         logger.exception(
-            "Manual document ingestion failed",
+            "Manual document ingestion failed before background scheduling",
             extra={
                 "document_id": payload.document_id,
             },
@@ -453,56 +396,57 @@ def start_ingestion(
             session.rollback()
         except Exception:
             logger.exception(
-                "Manual ingestion rollback failed.",
+                "Manual ingestion rollback failed before background scheduling.",
                 extra={
                     "document_id": payload.document_id,
                 },
             )
 
-        session.close()
-
-        failed_session: Session | None = None
-
         try:
-            failed_session = request.app.state.session_factory()
-
             failed_document_service = get_document_application_service(
                 request=request,
-                session=failed_session,
+                session=session,
             )
-
             failed_document_service.mark_failed(
                 MarkDocumentFailedCommand(
                     document_id=payload.document_id,
-                    failure_reason=failure_reason,
+                    failure_reason=str(exc),
                 )
             )
-
-            failed_session.commit()
-
+            session.commit()
         except Exception:
-            if failed_session is not None:
-                try:
-                    failed_session.rollback()
-                except Exception:
-                    logger.exception(
-                        "Failed-session rollback also failed.",
-                        extra={
-                            "document_id": payload.document_id,
-                        },
-                    )
-
             logger.exception(
-                "Could not mark document as failed",
+                "Could not mark document as failed before background scheduling",
                 extra={
                     "document_id": payload.document_id,
                 },
             )
+            try:
+                session.rollback()
+            except Exception:
+                logger.exception(
+                    "Failed-session rollback also failed before background scheduling.",
+                    extra={
+                        "document_id": payload.document_id,
+                    },
+                )
 
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
                 "code": "document_ingestion_failed",
-                "message": "Document ingestion failed.",
+                "message": "Document ingestion failed before scheduling.",
             },
         ) from exc
+    finally:
+        session.close()
+
+    background_tasks.add_task(
+        run_document_ingestion_task,
+        str(payload.document_id),
+    )
+
+    return IngestionResponse(
+        document_id=str(payload.document_id),
+        status="queued",
+    )

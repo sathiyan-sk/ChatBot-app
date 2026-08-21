@@ -7,6 +7,7 @@ from fastapi import (
     status,
 )
 
+from app.api.client.dependencies import get_widget_application_id
 from app.api.dependencies import (
     get_widget_application_service,
 )
@@ -34,6 +35,7 @@ def get_widget_configuration(
         default=None,
         alias="X-Widget-Key",
     ),
+    _: str = Depends(get_widget_application_id),
     service: WidgetApplicationService = Depends(
         get_widget_application_service,
     ),

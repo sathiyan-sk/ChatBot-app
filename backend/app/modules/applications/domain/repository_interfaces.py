@@ -14,7 +14,7 @@ class ApplicationRepository(ABC):
         slug: str,
         description: str | None,
         client_type: str,
-        allowed_origins: str | None,
+        allowed_origins: list[str] | None,
     ) -> Application:
         raise NotImplementedError
 
@@ -39,7 +39,7 @@ class ApplicationRepository(ABC):
         slug: str,
         description: str | None,
         client_type: str,
-        allowed_origins: str | None,
+        allowed_origins: list[str] | None,
         is_active: bool,
     ) -> Application:
         raise NotImplementedError

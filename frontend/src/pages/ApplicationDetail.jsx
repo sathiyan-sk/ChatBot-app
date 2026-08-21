@@ -41,6 +41,8 @@ export default function ApplicationDetail() {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isRebuilding, setIsRebuilding] = useState(false);
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [websiteTitle, setWebsiteTitle] = useState("");
 
   // Copy states
   const [copiedSnippet, setCopiedSnippet] = useState(false);
@@ -55,16 +57,18 @@ export default function ApplicationDetail() {
         setApp(matched);
 
         // Fetch knowledge base for this application
+        let kbData = null;
         try {
           const kbRes = await apiClient.get(`/admin/knowledge-bases/by-application/${id}`);
-          setKnowledgeBase(kbRes.data);
+          kbData = kbRes.data;
+          setKnowledgeBase(kbData);
         } catch {
           console.warn("No knowledge base found for this application");
         }
 
-        // Fetch documents if knowledge base exists
-        if (knowledgeBase?.id) {
-          const docsRes = await apiClient.get(`/admin/documents?knowledge_base_id=${knowledgeBase.id}`);
+        // Fetch documents if knowledge base exists using the freshly loaded value.
+        if (kbData?.id) {
+          const docsRes = await apiClient.get(`/admin/documents?knowledge_base_id=${kbData.id}`);
           setDocuments(docsRes.data);
         }
 
@@ -220,6 +224,44 @@ export default function ApplicationDetail() {
       toast.error(msg);
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleCreateWebsiteDocument = async (e) => {
+    e.preventDefault();
+    if (!knowledgeBase?.id) {
+      toast.error("No knowledge base found. Please create one first.");
+      return;
+    }
+
+    const trimmedUrl = websiteUrl.trim();
+    if (!trimmedUrl) {
+      toast.error("Please enter a website URL.");
+      return;
+    }
+
+    try {
+      const url = new URL(trimmedUrl);
+      if (!["http:", "https:"].includes(url.protocol)) {
+        throw new Error("URL must use http or https");
+      }
+
+      await apiClient.post("/admin/documents", {
+        knowledge_base_id: knowledgeBase.id,
+        title: websiteTitle.trim() || url.hostname,
+        description: `Website source: ${url.toString()}`,
+        source_type: "website",
+        source_uri: url.toString(),
+      });
+
+      toast.success(`Website source "${url.hostname}" queued for ingestion.`);
+      setWebsiteUrl("");
+      setWebsiteTitle("");
+      const docsRes = await apiClient.get(`/admin/documents?knowledge_base_id=${knowledgeBase.id}`);
+      setDocuments(docsRes.data);
+    } catch (error) {
+      console.error(error);
+      toast.error("Website document creation failed. Please enter a valid http/https URL.");
     }
   };
 
@@ -616,7 +658,7 @@ export default function ApplicationDetail() {
                     <div className="flex justify-between items-center bg-white/2 p-2 rounded-lg border border-white/5">
                       <span className="text-emerald-400">Indexed (RAG ground):</span>
                       <span className="font-bold text-emerald-400 font-mono">
-                        {documents.filter((d) => d.status === "indexed").length}
+                        {documents.filter((d) => d.status === "ready").length}
                       </span>
                     </div>
                   </div>
@@ -684,7 +726,7 @@ export default function ApplicationDetail() {
                 {/* Ingestion Matrix Layout */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                   {/* Drag and Drop Zone */}
-                  <div className="lg:col-span-1">
+                  <div className="lg:col-span-1 space-y-5">
                     <div
                       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                       onDragLeave={() => setIsDragging(false)}
@@ -725,6 +767,46 @@ export default function ApplicationDetail() {
                         </div>
                       )}
                     </div>
+
+                    <form onSubmit={handleCreateWebsiteDocument} className="glassmorphism rounded-2xl p-4 border border-white/10 space-y-3">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                        <Globe className="h-3.5 w-3.5 text-[#00D4FF]" />
+                        <span>Website Source</span>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Website URL</label>
+                        <input
+                          type="url"
+                          value={websiteUrl}
+                          onChange={(e) => setWebsiteUrl(e.target.value)}
+                          placeholder="https://example.com"
+                          className="w-full bg-[#0B1221] border border-white/10 focus:border-[#00D4FF] text-white text-xs rounded-xl px-3 py-2.5 outline-none focus:ring-1 focus:ring-[#00D4FF] transition"
+                          data-testid="website-url-input"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Title (optional)</label>
+                        <input
+                          type="text"
+                          value={websiteTitle}
+                          onChange={(e) => setWebsiteTitle(e.target.value)}
+                          placeholder="Example Docs"
+                          className="w-full bg-[#0B1221] border border-white/10 focus:border-[#00D4FF] text-white text-xs rounded-xl px-3 py-2.5 outline-none focus:ring-1 focus:ring-[#00D4FF] transition"
+                          data-testid="website-title-input"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#00D4FF] to-[#2563EB] text-[#040914] font-semibold text-[10px] tracking-wider uppercase hover:scale-[1.01] active:scale-[0.98] transition shadow-[0_0_15px_rgba(0,212,255,0.2)] cursor-pointer"
+                        data-testid="website-document-submit"
+                      >
+                        <Globe className="h-3.5 w-3.5" />
+                        <span>Ingest Website</span>
+                      </button>
+                    </form>
                   </div>
 
                   {/* Table List (Right columns) */}
@@ -760,25 +842,25 @@ export default function ApplicationDetail() {
                                   {doc.file_size_kb || "N/A"} KB
                                 </td>
                                 <td className="py-3 px-4" data-testid={`document-status-${doc.id}`}>
-                                  {doc.status === "indexed" && (
+                                  {doc.status === "ready" && (
                                     <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full text-[10px] font-medium font-mono uppercase">
-                                      indexed
+                                      ready
                                     </span>
                                   )}
-                                  {doc.status === "parsing" && (
+                                  {doc.status === "processing" && (
                                     <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full text-[10px] font-medium font-mono uppercase inline-flex items-center gap-1">
                                       <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                      parsing
+                                      processing
                                     </span>
                                   )}
-                                  {doc.status === "uploaded" && (
+                                  {doc.status === "pending" && (
                                     <span className="bg-blue-500/10 border border-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full text-[10px] font-medium font-mono uppercase inline-flex items-center gap-1">
                                       <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                      uploaded
+                                      pending
                                     </span>
                                   )}
                                   {doc.status === "failed" && (
-                                    <span className="bg-red-500/10 border border-red-500/20 text-red-400 px-2 py-0.5 rounded-full text-[10px] font-medium font-mono uppercase" title={doc.error_message}>
+                                    <span className="bg-red-500/10 border border-red-500/20 text-red-400 px-2 py-0.5 rounded-full text-[10px] font-medium font-mono uppercase" title={doc.failure_reason || doc.error_message}>
                                       failed
                                     </span>
                                   )}
@@ -790,12 +872,12 @@ export default function ApplicationDetail() {
                                         <RotateCcw className="h-3.5 w-3.5" />
                                       </button>
                                     )}
-                                    {doc.status === "uploaded" && (
+                                    {doc.status === "pending" && (
                                       <button onClick={() => handleDocAction(doc.id, "ready")} className="p-1.5 border border-emerald-500/10 hover:border-emerald-500/30 rounded-lg hover:bg-emerald-500/10 text-emerald-400 hover:text-emerald-300 transition focus:outline-none" title="Mark ready" data-testid={`ready-btn-${doc.id}`}>
                                         <Check className="h-3.5 w-3.5" />
                                       </button>
                                     )}
-                                    {doc.status === "uploaded" && (
+                                    {doc.status === "pending" && (
                                       <button onClick={() => handleDocAction(doc.id, "failed", { failure_reason: "Manually marked failed by admin" })} className="p-1.5 border border-red-500/10 hover:border-red-500/30 rounded-lg hover:bg-red-500/10 text-red-400 hover:text-red-300 transition focus:outline-none" title="Mark failed" data-testid={`fail-btn-${doc.id}`}>
                                         <XCircle className="h-3.5 w-3.5" />
                                       </button>

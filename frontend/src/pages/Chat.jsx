@@ -69,10 +69,20 @@ export default function Chat() {
   useEffect(() => {
     const fetchSystemDetails = async () => {
       try {
-        const configRes = await fetch(`${BACKEND_URL}/api/system/config`).then(r => r.json()).catch(() => null);
-        if (configRes) setConfigInfo(configRes);
-      } catch (e) {
-        console.warn("Could not fetch system info", e);
+        const response = await fetch(`${BACKEND_URL}/api/system/config`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const configRes = await response.json();
+        setConfigInfo(configRes);
+      } catch (error) {
+        console.warn("Could not fetch system info, falling back to backend health defaults.", error);
+        setConfigInfo({
+          status: "degraded",
+          ollama_chat_model: "llama3",
+          ollama_embed_model: "nomic-embed-text",
+          app_name: "AI Knowledge Platform Backend",
+        });
       }
     };
     fetchSystemDetails();

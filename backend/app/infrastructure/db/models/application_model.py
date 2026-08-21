@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Index, String, Text
+from sqlalchemy import ARRAY, Boolean, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db.base import Base, TimestampMixin, UuidPrimaryKeyMixin
@@ -18,7 +18,7 @@ class ApplicationModel(UuidPrimaryKeyMixin, TimestampMixin, Base):
     slug: Mapped[str] = mapped_column(String(150), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     client_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    allowed_origins: Mapped[str | None] = mapped_column(Text, nullable=True)
+    allowed_origins: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
 
     knowledge_base = relationship(

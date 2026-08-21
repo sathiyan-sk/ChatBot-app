@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from app.knowledge_engine.domain.models import GeneratedResponse, KnowledgeChunk, RetrievalQuery
+from app.knowledge_engine.contracts.embeddings import EmbeddingsContract
+from app.knowledge_engine.contracts.llm import LlmContract
+from app.knowledge_engine.domain.models import KnowledgeChunk, RetrievalQuery
 
 
-class EmbeddingProvider(ABC):
-    @abstractmethod
-    def embed_query(self, text: str) -> list[float]:
-        raise NotImplementedError
+class EmbeddingProvider(EmbeddingsContract):
+    pass
 
 
 class VectorSearchProvider(ABC):
@@ -40,12 +40,5 @@ class RerankingProvider(ABC):
         raise NotImplementedError
 
 
-class LlmProvider(ABC):
-    @abstractmethod
-    def generate(
-        self,
-        *,
-        system_prompt: str,
-        user_prompt: str,
-    ) -> str:
-        raise NotImplementedError
+class LlmProvider(LlmContract):
+    pass

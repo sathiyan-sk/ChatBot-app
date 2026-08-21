@@ -11,7 +11,7 @@ class Application:
     slug: str
     description: str | None
     client_type: str
-    allowed_origins: str | None
+    allowed_origins: list[str]
     is_active: bool
     created_at: datetime
     updated_at: datetime

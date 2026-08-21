@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from io import BytesIO
 
-import pymupdf
+try:
+    import pymupdf
+except ImportError:  # pragma: no cover - optional dependency
+    pymupdf = None
 
 from app.core.exceptions import ApplicationError
 from app.knowledge_engine.contracts.parsing import (
@@ -25,6 +28,13 @@ class PyMuPDFParsingProvider(ParsingContract):
         self,
         source: RawSource,
     ) -> ParsedDocument:
+        if pymupdf is None:
+            raise ApplicationError(
+                message="PyMuPDF is not installed. Install the PDF parser dependency to process PDF documents.",
+                code="pdf_dependency_missing",
+                status_code=503,
+            )
+
         if source.content_bytes is None:
             raise ApplicationError(
                 message="PDF content is missing.",

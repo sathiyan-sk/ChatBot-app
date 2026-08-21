@@ -6,9 +6,16 @@ from fastapi import (
     HTTPException,
     status,
 )
+from sqlalchemy import select
 
 from app.api.dependencies import get_container
 from app.composition import ApplicationContainer
+from app.infrastructure.db.models.application_model import (
+    ApplicationModel,
+)
+from app.infrastructure.security.origin_validator import (
+    OriginValidator,
+)
 from app.modules.security.application.services import (
     ClientSecurityServices,
 )
@@ -65,6 +72,11 @@ def get_widget_application_id(
         default="",
         alias="X-Widget-Key",
     ),
+    origin: str | None = Header(
+        default=None,
+        alias="Origin",
+    ),
+    validator: OriginValidator = Depends(),
     container: ApplicationContainer = Depends(
         get_container,
     ),
@@ -98,6 +110,31 @@ def get_widget_application_id(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Widget is disabled.",
+            )
+
+        application = session.execute(
+            select(ApplicationModel).where(
+                ApplicationModel.id == str(widget.application_id),
+            )
+        ).scalar_one_or_none()
+
+        if application is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Widget application not found.",
+            )
+
+        allowed_origins = application.allowed_origins or []
+        if not origin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Origin header is required for widget requests.",
+            )
+
+        if not validator.is_allowed(origin, allowed_origins):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Origin is not allowed for this application.",
             )
 
         return str(widget.application_id)

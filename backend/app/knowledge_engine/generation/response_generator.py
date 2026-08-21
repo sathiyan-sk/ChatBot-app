@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.api.dependencies import ResponseFormatter
 from app.knowledge_engine.domain.provider_interfaces import LlmProvider
+from app.knowledge_engine.generation.response_formatter import ResponseFormatter
 
 
 class ResponseGenerator:

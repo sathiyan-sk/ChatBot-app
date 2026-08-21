@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 
 class LlmContract(ABC):
     @abstractmethod
-    def generate_text(
+    def generate(
         self,
         *,
         system_prompt: str,

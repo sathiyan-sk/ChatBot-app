@@ -86,8 +86,8 @@ def load_settings() -> Settings:
 
     openrouter_timeout_seconds = float(
         os.getenv(
-        "OPENROUTER_TIMEOUT_SECONDS",
-        str(provider_timeout_seconds),
+            "OPENROUTER_TIMEOUT_SECONDS",
+            str(provider_timeout_seconds),
         )
     )
 
@@ -116,12 +116,7 @@ def load_settings() -> Settings:
         database=DatabaseSettings(
             url=os.getenv(
                 "DATABASE_URL",
-                (
-                    "postgresql+psycopg2://"
-                    "postgres:pfEuZ2Zz3OII0oiN@"
-                    "db.qrmoeqkwmglnsjzacmox.supabase.co:"
-                    "5432/postgres?sslmode=require"
-                ),
+                "postgresql+psycopg2://postgres:postgres@localhost:5432/postgres",
             ),
         ),
         providers=ProviderSettings(
@@ -147,18 +142,19 @@ def load_settings() -> Settings:
             ),
         ),
         storage=StorageSettings(
-            supabase_url=os.environ[
-                "SUPABASE_URL"
-            ],
-            supabase_bucket_name=os.environ[
-                "SUPABASE_BUCKET_NAME"
-            ],
-            supabase_service_role_key=os.environ[
-                "SUPABASE_SERVICE_ROLE_KEY"
-            ],
-            provider_timeout_seconds=(
-                provider_timeout_seconds
+            supabase_url=os.getenv(
+                "SUPABASE_URL",
+                "",
             ),
+            supabase_bucket_name=os.getenv(
+                "SUPABASE_BUCKET_NAME",
+                "documents",
+            ),
+            supabase_service_role_key=os.getenv(
+                "SUPABASE_SERVICE_ROLE_KEY",
+                "",
+            ),
+            provider_timeout_seconds=provider_timeout_seconds,
         ),
         ollama=OllamaSettings(
             base_url=os.getenv(
@@ -173,41 +169,38 @@ def load_settings() -> Settings:
                 "LLM_MODEL_NAME",
                 "qwen2.5:7b",
             ),
-            provider_timeout_seconds=(
-                ollama_timeout_seconds
-            ),
+            provider_timeout_seconds=ollama_timeout_seconds,
         ),
-
         openrouter=OpenRouterSettings(
             base_url=os.getenv(
-            "OPENROUTER_BASE_URL",
-            "https://openrouter.ai/api/v1",
+                "OPENROUTER_BASE_URL",
+                "https://openrouter.ai/api/v1",
             ),
             api_key=os.getenv(
                 "OPENROUTER_API_KEY",
-                "",  # empty means not configured
+                "",
             ),
             model=os.getenv(
                 "OPENROUTER_MODEL",
-            "google/gemma-4-26b-a4b-it:free",
+                "google/gemma-4-26b-a4b-it:free",
             ),
             temperature=float(
-            os.getenv(
-            "OPENROUTER_TEMPERATURE",
-            "0.2",
-            )
-        ),
+                os.getenv(
+                    "OPENROUTER_TEMPERATURE",
+                    "0.2",
+                )
+            ),
             provider_timeout_seconds=openrouter_timeout_seconds,
             embedding_model=os.getenv(
                 "OPENROUTER_EMBEDDING_MODEL",
                 "qwen/qwen3-embedding-8b",
-                ),
+            ),
             embedding_dimensions=int(
-            os.getenv(
-            "OPENROUTER_EMBEDDING_DIMENSIONS",
-            "1024",
-            )
-        ),
+                os.getenv(
+                    "OPENROUTER_EMBEDDING_DIMENSIONS",
+                    "1024",
+                )
+            ),
         ),
         vector_store_table_name=os.getenv(
             "VECTOR_STORE_TABLE_NAME",
@@ -220,7 +213,10 @@ def load_settings() -> Settings:
             )
         ),
         provider_timeout_seconds=provider_timeout_seconds,
-        http_user_agent=os.getenv("HTTP_USER_AGENT", "AI-Knowledge-Platform/1.0",),
+        http_user_agent=os.getenv(
+            "HTTP_USER_AGENT",
+            "AI-Knowledge-Platform/1.0",
+        ),
     )
 
 

@@ -17,6 +17,7 @@ from app.api.admin.conversation_debug import (
 from app.api.client.widget import (
     router as client_widget_router,
 )
+from app.api.system import router as system_router
 
 api_router = APIRouter(prefix="/api")
 
@@ -32,6 +33,5 @@ api_router.include_router(
     admin_conversation_debug_router,
 )
 api_router.include_router(admin_widgets_router)
-api_router.include_router(
-    client_widget_router,
-)
+api_router.include_router(client_widget_router)
+api_router.include_router(system_router)

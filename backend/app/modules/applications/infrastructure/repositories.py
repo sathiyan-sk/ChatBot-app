@@ -16,6 +16,12 @@ from app.modules.applications.infrastructure.mappers import map_application_mode
 from app.modules.applications.domain.policies import build_application_slug
 
 
+def _normalize_allowed_origins(allowed_origins: list[str] | None) -> list[str]:
+    if not allowed_origins:
+        return []
+    return [origin.strip() for origin in allowed_origins if origin and origin.strip()]
+
+
 class ApplicationSqlAlchemyRepository(ApplicationRepository):
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -34,7 +40,7 @@ class ApplicationSqlAlchemyRepository(ApplicationRepository):
             slug=slug,
             description=description,
             client_type=client_type,
-            allowed_origins=allowed_origins or [],
+            allowed_origins=_normalize_allowed_origins(allowed_origins),
             is_active=True,
         )
         self._session.add(model)
@@ -83,7 +89,7 @@ class ApplicationSqlAlchemyRepository(ApplicationRepository):
         model.slug = slug
         model.description = description
         model.client_type = client_type
-        model.allowed_origins = allowed_origins or []
+        model.allowed_origins = _normalize_allowed_origins(allowed_origins)
         model.is_active = is_active
 
         self._session.flush()
